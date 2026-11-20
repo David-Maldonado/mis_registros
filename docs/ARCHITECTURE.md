@@ -1,7 +1,7 @@
 # Arquitectura de MisRegistros
 
-**Versión:** 0.2  
-**Estado:** Stack tecnológico base aprobado; diseño arquitectónico detallado en definición
+**Versión:** 0.3  
+**Estado:** Stack tecnológico base y modelo de datos aprobados; diseño de Flutter y NestJS en definición
 
 ## 1. Visión general
 
@@ -151,17 +151,24 @@ La solución seguirá estos principios:
 - Consistencia entre plataformas.
 - Diseño preparado para evolución funcional.
 
-## 7. Decisiones pendientes de implementación
+## 7. Decisiones definidas
+
+Las siguientes decisiones están documentadas en [DATA_MODEL.md](DATA_MODEL.md) y pendientes de implementación y pruebas:
+
+- Modelo entidad-relación de PostgreSQL.
+- Estrategia de migraciones: Supabase CLI con migraciones SQL versionadas en `supabase/migrations/`.
+- Políticas RLS, roles y privilegios por tabla.
+- Escrituras mediante funciones RPC y lecturas agregadas mediante vistas y funciones que respetan RLS.
+- Pruebas de base de datos con pgTAP mediante `supabase test db`.
+
+## 8. Decisiones pendientes de implementación
 
 Los siguientes aspectos se definirán antes de su implementación:
 
 - Estructura modular de Flutter.
 - Organización de módulos y capas en NestJS.
 - Contratos y convenciones de la API REST.
-- Modelo entidad-relación de PostgreSQL.
-- Estrategia de migraciones.
-- Políticas RLS específicas por tabla.
-- Estrategia de pruebas automatizadas.
+- Estrategia de pruebas automatizadas de NestJS y Flutter.
 - Estrategia de navegación y diseño adaptable.
 - Gestión de sesiones y almacenamiento según plataforma.
 - Configuración de despliegue de la aplicación Web.

@@ -1,7 +1,7 @@
 # DATA_MODEL.md
 
 **Proyecto:** MisRegistros  
-**Versión:** 1.2  
+**Versión:** 1.3  
 **Estado:** Diseño técnico cerrado, pendiente de implementación y pruebas  
 **Base de datos:** Supabase PostgreSQL
 
@@ -36,9 +36,10 @@ Las decisiones aquí documentadas constituyen la referencia para las migraciones
 - Pagos de tarjetas de crédito.
 - Devoluciones parciales.
 - Ajustes de saldo.
-- Categorías y subcategorías personalizables.
+- Edición de operaciones mediante reemplazo atómico y eliminación mediante anulación.
+- Categorías y subcategorías personalizables, creadas por cada usuario.
 - Historial de movimientos.
-- Resúmenes y balances mensuales.
+- Resúmenes y balances mensuales calculados en la zona horaria del usuario.
 - Soporte para PYG y USD.
 - Aislamiento de datos entre usuarios.
 
@@ -70,6 +71,9 @@ Las decisiones aquí documentadas constituyen la referencia para las migraciones
 12. Las escrituras se realizan mediante funciones RPC controladas.
 13. Las lecturas respetan RLS y la propiedad de los datos.
 14. La base de datos debe mantener las reglas financieras incluso cuando las solicitudes lleguen directamente desde una sesión autenticada.
+15. Las cuentas líquidas nunca pueden quedar con saldo negativo; las tarjetas de crédito sí, porque su saldo negativo representa deuda.
+16. Los períodos mensuales se determinan según la zona horaria del usuario, no según UTC.
+17. Las operaciones de creación de transacciones son idempotentes: un reintento de la misma solicitud no genera duplicados.
 
 ---
 
@@ -94,10 +98,13 @@ Relaciones principales:
 - Un usuario puede registrar múltiples transacciones.
 - Una transacción puede generar uno o dos movimientos de cuenta.
 - Una devolución referencia un gasto original.
+- Una transacción corregida puede referenciar a la transacción anulada que reemplaza.
 - Una cuenta puede contener múltiples movimientos.
 - Cada cuenta y transacción utiliza una moneda.
 
 La propiedad de los registros se determina mediante `user_id`, y las claves foráneas compuestas impiden relacionar registros pertenecientes a usuarios o monedas diferentes.
+
+Las columnas `user_id` de las tablas de dominio referencian `profiles(id)`, no `auth.users(id)`. De este modo, `profiles` es la raíz de los datos de cada usuario y la eliminación de una cuenta de Supabase Auth sigue una única cadena controlada: `auth.users → profiles → purga de datos` (ver sección 12).
 
 ---
 
@@ -111,7 +118,8 @@ Extiende la información del usuario autenticado.
 |---|---|---|
 | id | uuid | PK, FK a auth.users(id), ON DELETE CASCADE |
 | display_name | text | NULL permitido |
-| default_currency_id | uuid | FK a currencies(id) |
+| default_currency_id | uuid | FK a currencies(id), NOT NULL |
+| timezone | text | NOT NULL DEFAULT 'America/Asuncion' |
 | created_at | timestamptz | NOT NULL |
 | updated_at | timestamptz | NOT NULL |
 
@@ -119,6 +127,11 @@ Reglas:
 
 - Se crea automáticamente al registrarse un usuario.
 - `id` coincide con `auth.users.id`.
+- La moneda por defecto inicial es PYG.
+- La zona horaria inicial es `America/Asuncion`.
+- `timezone` debe ser un identificador IANA válido (existente en `pg_timezone_names`); se valida en la RPC de actualización.
+- `timezone` se utiliza para determinar los límites de los períodos mensuales en los resúmenes.
+- No se crean categorías por defecto al registrarse: cada usuario crea las suyas.
 - El usuario solo puede consultar y modificar su propio perfil.
 - La actualización del perfil se realiza mediante RPC.
 - La eliminación del usuario desencadena la purga controlada de sus datos.
@@ -160,7 +173,7 @@ Representa las cuentas financieras del usuario.
 | Campo | Tipo | Restricción |
 |---|---|---|
 | id | uuid | PK |
-| user_id | uuid | FK a auth.users(id), NOT NULL |
+| user_id | uuid | FK a profiles(id), NOT NULL |
 | currency_id | uuid | FK a currencies(id), NOT NULL |
 | name | text | NOT NULL |
 | type | text | NOT NULL |
@@ -198,11 +211,15 @@ Reglas de modificación:
 Convención de saldos:
 
 - Cuenta líquida: saldo positivo representa dinero disponible.
+- Cuenta líquida: el saldo nunca puede ser negativo (no se admite sobregiro en V1).
 - Tarjeta: saldo negativo representa deuda.
 - Tarjeta con saldo cero: deuda cancelada.
 - Tarjeta con saldo positivo: crédito a favor.
+- Tarjeta: los gastos se registran siempre, aunque el usuario no tenga saldo en sus cuentas líquidas.
 
 La interfaz presenta la deuda de la tarjeta como un valor positivo, aunque internamente se almacena como saldo negativo.
+
+El límite de crédito es informativo: no impide registrar gastos que lo superen. La interfaz puede advertir al usuario cuando la deuda supera el límite (crédito disponible negativo).
 
 ### 4.4. categories
 
@@ -211,7 +228,7 @@ Representa las categorías y subcategorías personalizables.
 | Campo | Tipo | Restricción |
 |---|---|---|
 | id | uuid | PK |
-| user_id | uuid | FK a auth.users(id), NOT NULL |
+| user_id | uuid | FK a profiles(id), NOT NULL |
 | parent_id | uuid | NULL |
 | name | text | NOT NULL |
 | type | text | NOT NULL |
@@ -243,6 +260,7 @@ Reglas:
 - Una categoría nunca utilizada y sin dependencias puede eliminarse.
 - Una categoría inactiva no puede utilizarse en nuevas operaciones que requieran seleccionar una categoría.
 - Las operaciones históricas conservan su referencia a la categoría.
+- El sistema no crea categorías predefinidas. Un usuario sin categorías activas del tipo requerido no puede registrar ingresos o gastos hasta crear al menos una; la interfaz debe guiarlo para hacerlo.
 
 ### 4.5. transactions
 
@@ -251,13 +269,15 @@ Representa las operaciones financieras.
 | Campo | Tipo | Restricción |
 |---|---|---|
 | id | uuid | PK |
-| user_id | uuid | FK a auth.users(id), NOT NULL |
+| user_id | uuid | FK a profiles(id), NOT NULL |
+| client_request_id | uuid | NOT NULL |
 | type | text | NOT NULL |
 | status | text | NOT NULL DEFAULT 'posted' |
 | currency_id | uuid | FK a currencies(id), NOT NULL |
 | amount | numeric(18,4) | NOT NULL |
 | category_id | uuid | NULL |
 | related_transaction_id | uuid | NULL |
+| replaces_transaction_id | uuid | NULL |
 | occurred_at | timestamptz | NOT NULL |
 | description | text | NULL |
 | voided_at | timestamptz | NULL |
@@ -290,15 +310,25 @@ Restricciones:
 - `voided_at` debe ser NULL cuando el estado es `posted`.
 - `voided_at` debe tener valor cuando el estado es `voided`.
 - `void_reason` solo se utiliza en transacciones anuladas.
+- `UNIQUE (user_id, client_request_id)`.
+- `replaces_transaction_id` referencia una transacción del mismo usuario y del mismo tipo, que debe quedar `voided`.
+- Una transacción solo puede ser reemplazada una vez (`UNIQUE (replaces_transaction_id)` parcial, cuando no es NULL).
 
 Reglas de modificación:
 
-- `occurred_at`, `type`, `currency_id`, `amount`, `category_id` y `related_transaction_id` son inmutables después de contabilizar la operación.
+- `occurred_at`, `type`, `currency_id`, `amount`, `category_id`, `related_transaction_id`, `replaces_transaction_id` y `client_request_id` son inmutables después de contabilizar la operación.
 - La descripción puede modificarse.
 - La única transición de estado permitida es `posted → voided`.
 - Una transacción anulada no puede volver a contabilizarse.
 - Las transacciones contabilizadas no pueden eliminarse físicamente mediante operaciones normales.
-- La corrección de una operación se realiza anulando la original y creando otra.
+- La corrección de una operación se realiza mediante reemplazo atómico: se anula la original y se crea la corregida en la misma transacción PostgreSQL (ver sección 6.10).
+- La "eliminación" visible para el usuario corresponde a una anulación.
+
+Idempotencia:
+
+- `client_request_id` es un UUID generado por el cliente para cada intención de operación.
+- Si llega una solicitud con un `client_request_id` ya registrado para el usuario, la RPC devuelve la transacción existente sin crear otra.
+- Si el `client_request_id` coincide pero los parámetros son diferentes, la RPC rechaza la solicitud.
 
 ### 4.6. account_movements
 
@@ -337,10 +367,21 @@ Las siguientes relaciones utilizan claves foráneas compuestas:
 | categories | parent_id, user_id, type | categories | id, user_id, type |
 | transactions | category_id, user_id | categories | id, user_id |
 | transactions | related_transaction_id, user_id, currency_id | transactions | id, user_id, currency_id |
+| transactions | replaces_transaction_id, user_id, type | transactions | id, user_id, type |
 | account_movements | transaction_id, user_id, currency_id | transactions | id, user_id, currency_id |
 | account_movements | account_id, user_id, currency_id | accounts | id, user_id, currency_id |
 
-Las relaciones financieras deben utilizar `ON DELETE RESTRICT`, excepto la relación entre `profiles` y `auth.users`, que utiliza `ON DELETE CASCADE`.
+Para soportar la última relación de `transactions`, se agrega la restricción `UNIQUE (id, user_id, type)` en `transactions`.
+
+Además, `accounts.user_id`, `categories.user_id` y `transactions.user_id` referencian `profiles(id)`. `account_movements.user_id` queda vinculado al usuario mediante sus claves compuestas hacia `transactions` y `accounts`.
+
+Las relaciones financieras utilizan `ON DELETE NO ACTION` (comportamiento por defecto), excepto la relación entre `profiles` y `auth.users`, que utiliza `ON DELETE CASCADE`.
+
+Se elige `NO ACTION` en lugar de `RESTRICT` porque:
+
+- En la operación normal ambas impiden eliminar un registro referenciado.
+- `NO ACTION` verifica la restricción al final de la sentencia, lo que permite que la purga elimine en una única sentencia filas que se referencian entre sí (devoluciones, reemplazos y subcategorías).
+- `RESTRICT` verifica cada fila inmediatamente y haría fallar esas eliminaciones según el orden interno en que PostgreSQL procese las filas.
 
 La purga de usuario controla el orden de eliminación de los registros dependientes.
 
@@ -360,6 +401,15 @@ Los movimientos de transacciones `voided` se conservan, pero no afectan el saldo
 
 Los saldos no se almacenan como valores independientes que puedan desincronizarse de los movimientos.
 
+Regla de saldo no negativo:
+
+- Ninguna operación puede dejar una cuenta líquida con saldo negativo.
+- La regla se aplica a gastos, transferencias de origen, ajustes negativos, anulaciones y reemplazos.
+- Una anulación que reduzca el saldo de una cuenta líquida (por ejemplo, anular un ingreso ya gastado) se rechaza si dejaría la cuenta en negativo.
+- Las tarjetas de crédito no están sujetas a esta regla.
+
+El crédito disponible de una tarjeta se calcula como `credit_limit + saldo`. Es un valor informativo y puede ser negativo.
+
 ### 6.2. Ingresos
 
 - Una transacción de tipo `income`.
@@ -372,6 +422,8 @@ Los saldos no se almacenan como valores independientes que puedan desincronizars
 - Una transacción de tipo `expense`.
 - Un único movimiento negativo.
 - La cuenta puede ser líquida o tarjeta de crédito.
+- Si la cuenta es líquida, debe tener saldo suficiente.
+- Si la cuenta es tarjeta, el gasto se registra aunque supere el límite de crédito.
 - La categoría debe ser de tipo `expense`.
 
 ### 6.4. Transferencias
@@ -383,13 +435,19 @@ Los saldos no se almacenan como valores independientes que puedan desincronizars
 - La suma de ambos movimientos debe ser cero.
 - El movimiento de origen es negativo.
 - El movimiento de destino es positivo.
+- La cuenta de origen debe tener saldo suficiente.
 
 Combinaciones permitidas:
 
 - Líquida → líquida.
 - Líquida → tarjeta de crédito.
 
-No se permiten transferencias entre monedas diferentes en V1.
+No se permiten en V1:
+
+- Transferencias entre monedas diferentes.
+- Transferencias desde una tarjeta de crédito (avances de efectivo).
+
+Las transferencias se registran siempre como salida de la cuenta de origen y entrada en la cuenta de destino, y aparecen en el historial y en el flujo de cada cuenta. No se suman a los totales de ingresos y gastos del resumen mensual, porque mover dinero entre cuentas propias no es un ingreso ni un gasto (ver sección 6.11).
 
 ### 6.5. Pagos de tarjetas
 
@@ -433,6 +491,8 @@ Los informes deben poder distinguir:
 - El movimiento puede ser positivo o negativo.
 - Puede afectar cualquier tipo de cuenta.
 - No requiere categoría.
+- Un ajuste negativo no puede dejar una cuenta líquida con saldo negativo.
+- Los ajustes no se suman a los totales de ingresos y gastos; se muestran por separado en el resumen.
 
 ### 6.8. Cuentas y operaciones inactivas
 
@@ -452,6 +512,52 @@ La desactivación no altera el historial ni los saldos existentes.
 - No se permite anular un gasto mientras tenga devoluciones contabilizadas.
 - Para anular un gasto con devoluciones, primero deben anularse las devoluciones correspondientes.
 - La anulación de una devolución libera el importe que vuelve a estar disponible para devolver.
+- No se permite una anulación que deje una cuenta líquida con saldo negativo.
+
+### 6.10. Edición mediante reemplazo
+
+La edición de una operación se implementa como un reemplazo atómico:
+
+1. Se bloquea la transacción original.
+2. Se verifica que pertenece al usuario y que está `posted`.
+3. Se anula la original con `void_reason = 'replaced'`.
+4. Se crea una nueva transacción del mismo tipo con los datos corregidos y `replaces_transaction_id` apuntando a la original.
+5. Ambas acciones se confirman o se revierten juntas.
+
+Reglas:
+
+- El tipo de operación no cambia. Para cambiar el tipo, el usuario anula y crea una nueva operación.
+- Pueden modificarse importe, cuentas, categoría, fecha y descripción, respetando las reglas del tipo.
+- La moneda resulta de las cuentas elegidas, que deben compartir moneda cuando corresponda.
+- El reemplazo de una devolución debe referenciar el mismo gasto original.
+- No se puede reemplazar un gasto con devoluciones contabilizadas, por la misma regla que impide anularlo.
+- Las validaciones de saldo no negativo se evalúan sobre el estado final, después de anular y crear.
+- El historial conserva la operación original anulada y su vínculo con la corregida.
+
+### 6.11. Resúmenes mensuales
+
+Los resúmenes se calculan por moneda, sin sumar importes de monedas diferentes, y solo con transacciones `posted`.
+
+El mes se determina convirtiendo `occurred_at` a la zona horaria del perfil del usuario (`profiles.timezone`). Por ejemplo, un gasto realizado el 31/10 a las 23:00 en Paraguay se guarda como 01/11 02:00 UTC, pero corresponde a octubre.
+
+Indicadores:
+
+| Indicador | Cálculo |
+|---|---|
+| Ingresos | Suma de `income` |
+| Gastos brutos | Suma de `expense` |
+| Devoluciones | Suma de `refund` |
+| Gastos netos | Gastos brutos − devoluciones |
+| Balance mensual | Ingresos − gastos netos |
+| Transferencias | Total transferido entre cuentas propias, informado por separado |
+| Ajustes | Suma de ajustes positivos y negativos, informados por separado |
+
+Las transferencias y los ajustes no se incluyen en ingresos, gastos ni balance mensual.
+
+Flujo por cuenta:
+
+- Para cada cuenta se informan las entradas y salidas del período, incluyendo todos los tipos de operación (ingresos, gastos, transferencias, devoluciones y ajustes).
+- Así, toda entrada o salida de dinero queda registrada y visible, sin duplicar los totales de ingresos y gastos.
 
 ---
 
@@ -495,8 +601,11 @@ La función:
 - Se ejecuta como `SECURITY DEFINER`.
 - Tiene propietario privilegiado de confianza.
 - Utiliza `SET search_path = pg_catalog, public, pg_temp`.
-- Inserta el perfil correspondiente.
+- Inserta el perfil correspondiente, con moneda por defecto PYG y zona horaria `America/Asuncion`.
+- No crea categorías ni cuentas.
 - No acepta un `user_id` proporcionado por el cliente.
+
+Un error en esta función impide el registro del usuario, por lo que debe ser simple y estar cubierta por pruebas.
 
 La función no debe exponerse como RPC pública.
 
@@ -587,6 +696,8 @@ Además debe verificar:
 - Categoría heredada del gasto original en devoluciones.
 - Existencia y estado válido del gasto original.
 - Límite acumulado de devoluciones contabilizadas.
+- Saldo no negativo de las cuentas líquidas afectadas, incluso cuando el evento es una anulación.
+- Coherencia del reemplazo: la transacción reemplazada es del mismo tipo y quedó `voided`.
 
 Para una transacción anulada, los movimientos deben seguir existiendo y conservar su estructura original.
 
@@ -790,14 +901,17 @@ Las funciones financieras se ejecutan de forma atómica dentro de una transacci�
 | create_transfer | Crear transferencia y sus dos movimientos |
 | create_refund | Crear devolución parcial |
 | create_adjustment | Crear ajuste de saldo |
+| replace_transaction | Editar una operación mediante reemplazo atómico |
 | update_transaction_description | Actualizar descripción |
 | void_transaction | Anular transacción |
+
+Las funciones `create_*` y `replace_transaction` reciben el parámetro `p_client_request_id` para garantizar la idempotencia.
 
 Cada función debe:
 
 1. Obtener `auth.uid()`.
 2. Rechazar solicitudes sin usuario autenticado.
-3. Validar los parámetros.
+3. Validar los parámetros y, cuando corresponda, resolver la idempotencia.
 4. Validar la propiedad de los registros.
 5. Bloquear las filas necesarias.
 6. Validar cuentas, categorías, moneda y estado.
@@ -836,7 +950,7 @@ Las funciones deben respetar la jerarquía, el tipo y las restricciones de uso.
 
 | Función | Responsabilidad |
 |---|---|
-| update_profile | Actualizar display_name y default_currency_id |
+| update_profile | Actualizar display_name, default_currency_id y timezone |
 
 No permite modificar el identificador del usuario.
 
@@ -864,6 +978,23 @@ El usuario se determina mediante `auth.uid()`.
 Las funciones deben validar explícitamente la propiedad de cada cuenta, categoría y transacción involucrada.
 
 No utilizar `service_role` para operaciones ordinarias.
+
+### 9.7. Lecturas y resúmenes
+
+Las lecturas agregadas se resuelven en PostgreSQL para evitar transferir y sumar filas en NestJS.
+
+| Objeto | Tipo | Responsabilidad |
+|---|---|---|
+| account_balances | Vista | Saldo actual por cuenta y crédito disponible de tarjetas |
+| get_monthly_summary | Función | Indicadores mensuales por moneda (sección 6.11) |
+| get_monthly_account_flows | Función | Entradas y salidas por cuenta en el período |
+
+Reglas:
+
+- Las vistas se crean con `security_invoker = true`, para que apliquen las políticas RLS del usuario que consulta.
+- Las funciones de lectura son `SECURITY INVOKER`, `STABLE` y no reciben `user_id`.
+- Las funciones de resumen reciben año y mes, y calculan los límites del período con `profiles.timezone`.
+- `authenticated` recibe SELECT sobre las vistas y EXECUTE sobre las funciones de lectura; `anon` no recibe acceso.
 
 ---
 
@@ -929,7 +1060,17 @@ Al anular un gasto, debe comprobar nuevamente que no existen devoluciones `poste
 
 La creación de una devolución y la anulación del gasto original compiten por el mismo bloqueo, evitando que ambas operaciones se confirmen de forma incompatible.
 
-### 10.6. Nivel de aislamiento
+`void_transaction` y `replace_transaction` también deben bloquear las cuentas afectadas, en orden determinístico por UUID, antes de validar el saldo no negativo de las cuentas líquidas.
+
+### 10.6. Saldo no negativo
+
+Toda operación que reduzca el saldo de una cuenta líquida debe bloquear previamente la fila de la cuenta. Así, dos operaciones concurrentes sobre la misma cuenta se serializan y no pueden dejarla en negativo aunque cada una, por separado, fuera válida.
+
+### 10.7. Idempotencia concurrente
+
+Dos solicitudes simultáneas con el mismo `client_request_id` se resuelven mediante la restricción `UNIQUE (user_id, client_request_id)`: una se confirma y la otra devuelve la transacción existente.
+
+### 10.8. Nivel de aislamiento
 
 Las RPC utilizan el aislamiento normal de PostgreSQL, `READ COMMITTED`, salvo que una operación justifique expresamente otro nivel.
 
@@ -959,6 +1100,9 @@ Crear índices para las claves foráneas y consultas frecuentes.
 - Índice por `(user_id, category_id, occurred_at DESC)`.
 - Índice por `related_transaction_id`.
 - Restricción única `(id, user_id, currency_id)`.
+- Restricción única `(id, user_id, type)`.
+- Restricción única `(user_id, client_request_id)`.
+- Índice único parcial por `replaces_transaction_id` cuando no es NULL.
 
 ### 11.4. account_movements
 
@@ -990,15 +1134,15 @@ La función:
 Orden de eliminación:
 
 1. `account_movements`
-2. Transacciones de tipo `refund`
-3. Resto de `transactions`
-4. `accounts`
-5. Categorías hijas
-6. Categorías raíz
-
-La eliminación de devoluciones antes de los gastos originales respeta las referencias entre transacciones.
+2. `transactions` (en una única sentencia)
+3. `accounts`
+4. `categories` (en una única sentencia)
 
 La eliminación de movimientos antes de las transacciones respeta las claves foráneas.
+
+Las referencias internas (devoluciones, reemplazos y subcategorías) se resuelven eliminando cada tabla en una única sentencia, gracias a que las claves foráneas utilizan `NO ACTION`, que se verifica al final de la sentencia (ver sección 5).
+
+Como `accounts`, `categories` y `transactions` referencian `profiles(id)`, la purga debe completarse en el trigger `BEFORE DELETE` de `profiles`, antes de que se elimine la fila del perfil.
 
 Las políticas RLS específicas permiten al rol purgador ejecutar estas operaciones sin concederle `BYPASSRLS`.
 
@@ -1028,7 +1172,7 @@ Las lecturas se realizan desde NestJS mediante el cliente Supabase autenticado c
 
 Las consultas deben respetar RLS.
 
-Los resúmenes y balances se calculan a partir de movimientos y transacciones contabilizadas.
+Los resúmenes y balances se calculan a partir de movimientos y transacciones contabilizadas, mediante los objetos de lectura definidos en la sección 9.7.
 
 ### 13.3. Paginación
 
@@ -1053,6 +1197,20 @@ La eliminación de cuentas y categorías utilizadas se sustituye por desactivaci
 Las operaciones contabilizadas se anulan, no se eliminan.
 
 La purga de un usuario es la única excepción de eliminación física de los registros financieros y está restringida al mecanismo de purga descrito.
+
+### 13.6. Zona horaria
+
+Las fechas se almacenan en `timestamptz` (instante absoluto). La zona horaria del perfil solo se utiliza para presentar fechas y determinar los períodos de los resúmenes.
+
+Si el usuario cambia su zona horaria, los resúmenes se recalculan con la nueva zona; los datos almacenados no se modifican.
+
+### 13.7. Pruebas de base de datos
+
+Los criterios de aceptación de la sección 15 se automatizan con pgTAP, ejecutado mediante `supabase test db`, incluido en la Supabase CLI del proyecto.
+
+- Las pruebas se ubican en `supabase/tests/database/`.
+- Se ejecutan contra la base local o un entorno de pruebas, nunca contra producción.
+- Cada prueba simula usuarios autenticados mediante sus claims JWT para verificar RLS y las RPC.
 
 ---
 
@@ -1094,6 +1252,10 @@ El modelo no se considera implementado hasta que las pruebas demuestren:
 - Las devoluciones incrementan correctamente el saldo de la cuenta receptora.
 - Las devoluciones acumuladas nunca superan el gasto original.
 - Los ajustes afectan correctamente el saldo.
+- Una cuenta líquida nunca queda con saldo negativo, incluso tras anulaciones o reemplazos.
+- Un gasto con tarjeta se registra aunque supere el límite de crédito.
+- Los resúmenes excluyen transferencias y ajustes de ingresos y gastos, y los informan por separado.
+- Los períodos mensuales respetan la zona horaria del usuario.
 
 ### Historial
 
@@ -1101,6 +1263,8 @@ El modelo no se considera implementado hasta que las pruebas demuestren:
 - Una operación anulada no puede reactivarse.
 - Los movimientos históricos permanecen inmutables.
 - Las operaciones anuladas dejan de afectar los saldos.
+- Un reemplazo anula la original y crea la corregida de forma atómica, conservando el vínculo entre ambas.
+- Un reintento con el mismo `client_request_id` no genera duplicados.
 
 ### Concurrencia
 
@@ -1127,4 +1291,13 @@ El modelo no se considera implementado hasta que las pruebas demuestren:
 
 ---
 
-**Fin del documento — DATA_MODEL.md v1.2**
+## 16. Historial de cambios
+
+| Versión | Cambios |
+|---|---|
+| 1.2 | Diseño técnico cerrado. |
+| 1.3 | `user_id` referencia `profiles(id)`; FK financieras con `NO ACTION`; purga simplificada; saldo no negativo en cuentas líquidas; límite de crédito informativo; zona horaria del perfil; reglas de resúmenes (transferencias y ajustes por separado); edición mediante reemplazo atómico; idempotencia con `client_request_id`; vistas y funciones de lectura; pruebas con pgTAP; sin categorías predefinidas. |
+
+---
+
+**Fin del documento — DATA_MODEL.md v1.3**

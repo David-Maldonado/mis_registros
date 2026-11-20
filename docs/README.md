@@ -1,7 +1,7 @@
 # MisRegistros
 
-**Versión del documento:** 0.2  
-**Estado:** Stack tecnológico base aprobado; alcance funcional y diseño detallado en definición
+**Versión del documento:** 0.3  
+**Estado:** Stack tecnológico base y alcance funcional de V1 aprobados; diseño detallado de Flutter y NestJS en definición
 
 ## 1. Descripción del proyecto
 
@@ -49,27 +49,45 @@ La interfaz podrá adaptar su navegación y presentación según la plataforma y
 - Cierre de sesión.
 - Gestión de sesiones autenticadas.
 
-### 3.3. Movimientos financieros
+### 3.3. Cuentas
+
+- Cuentas de efectivo, bancos, billeteras electrónicas y tarjetas de crédito.
+- Monedas soportadas: PYG y USD (sin conversión automática).
+- Las cuentas líquidas (efectivo, bancos, billeteras) no pueden quedar con saldo negativo.
+- Las tarjetas de crédito permiten registrar gastos aunque el usuario no tenga saldo en otras cuentas; la deuda se refleja en la tarjeta.
+- El límite de crédito es informativo: la app puede advertir cuando se supera, pero no impide registrar el gasto.
+
+### 3.4. Movimientos financieros
 
 - Registrar ingresos.
 - Registrar gastos.
+- Registrar transferencias entre cuentas propias, incluidos los pagos de tarjetas.
+- Registrar devoluciones parciales de gastos.
+- Registrar ajustes de saldo.
 - Consultar movimientos.
-- Editar movimientos.
-- Eliminar movimientos.
+- Editar movimientos: la operación original se anula y se crea la corregida en un único paso, conservando el historial.
+- Eliminar movimientos: la operación se anula; no se borra físicamente.
 
-### 3.4. Categorías
+Toda entrada o salida de dinero queda registrada en el historial y en el flujo de la cuenta correspondiente.
 
-- Clasificación de ingresos y gastos.
-- Asociación de categorías con movimientos.
+### 3.5. Categorías
 
-> **Decisión funcional pendiente:** definir si en V1 las categorías serán predefinidas por el sistema o administrables por cada usuario (creación, edición y eliminación).
+- Clasificación de ingresos y gastos mediante categorías y subcategorías (máximo dos niveles).
+- Las categorías son personalizables: cada usuario las crea, edita y desactiva.
+- No se crean categorías predefinidas; la app guía al usuario para crear la primera antes de registrar un ingreso o gasto.
 
-### 3.5. Resúmenes
+### 3.6. Resúmenes
 
-- Balance mensual.
 - Total de ingresos.
-- Total de gastos.
+- Total de gastos (brutos, devoluciones y netos).
+- Balance mensual (ingresos − gastos netos).
+- Transferencias y ajustes, informados por separado.
+- Entradas y salidas por cuenta.
 - Historial de movimientos.
+
+Los resúmenes se calculan por moneda y según la zona horaria del usuario (por defecto, `America/Asuncion`). Las transferencias entre cuentas propias y los ajustes no se suman a ingresos ni gastos, para no duplicar ni inflar los totales.
+
+El detalle de las reglas se encuentra en [DATA_MODEL.md](DATA_MODEL.md).
 
 ## 4. Características multiusuario
 
