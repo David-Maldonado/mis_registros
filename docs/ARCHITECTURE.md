@@ -160,12 +160,15 @@ Las siguientes decisiones están aprobadas:
   - Organización modular en NestJS: `config/`, `supabase/` (cliente por solicitud con JWT del usuario, sin `service_role`), `auth/` (`SupabaseAuthGuard` + `@CurrentUser()`), `common/` (filtro global de excepciones y `ValidationPipe`), y módulos de dominio (`currencies`, `profiles`, `accounts`, `categories`, `transactions`, `reports`).
   - Convenciones de la API REST: `/currencies`, `/profile`, `/accounts`, `/accounts/balances`, `/categories`, `/transactions` (con paginación por cursor `(occurred_at DESC, id DESC)` y endpoints específicos por tipo de operación, reemplazo atómico `PUT /transactions/:id`, descripción y anulación) y `/reports/monthly-summary` / `/reports/monthly-account-flows`.
 
+- **Flutter (`mobile/mis_registros/`):**
+  - Dependencias aprobadas: `supabase_flutter` (exclusivamente para Supabase Auth y persistencia de sesión por plataforma), `http`, `uuid` e `intl`.
+  - Configuración por entorno: `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `API_BASE_URL` mediante `--dart-define-from-file=.env.json` (excluido de Git).
+  - Estructura modular en `lib/`: `core/` (`config`, `network`, `theme` con soporte multitema claro/oscuro/sistema, `utils`) y `features/` (`auth`, `shell`, `summary`, `transactions`, `accounts`, `categories`, `profile`).
+  - Navegación adaptable: `NavigationBar` inferior + FAB en pantallas pequeñas (`< 840px`) y `NavigationRail` lateral en Web/escritorio (`>= 840px`).
+
 ## 8. Decisiones pendientes de implementación
 
 Los siguientes aspectos se definirán antes de su implementación:
 
-- Estructura modular de Flutter.
 - Estrategia de pruebas automatizadas de NestJS y Flutter.
-- Estrategia de navegación y diseño adaptable.
-- Gestión de sesiones y almacenamiento según plataforma.
 - Configuración de despliegue de la aplicación Web.

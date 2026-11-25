@@ -4,7 +4,10 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard';
 import { throwIfSupabaseError } from '../common/supabase-error.util';
 import { SupabaseService } from '../supabase/supabase.service';
-import { MonthlyReportQueryDto } from './dto/monthly-report.dto';
+import {
+  AnnualCategoryBreakdownQueryDto,
+  MonthlyReportQueryDto,
+} from './dto/monthly-report.dto';
 
 @Controller('reports')
 @UseGuards(SupabaseAuthGuard)
@@ -35,6 +38,22 @@ export class ReportsController {
     const { data, error } = await client.rpc('get_monthly_account_flows', {
       p_year: query.year,
       p_month: query.month,
+    });
+
+    throwIfSupabaseError(error);
+    return data;
+  }
+
+  @Get('annual-category-breakdown')
+  async getAnnualCategoryBreakdown(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AnnualCategoryBreakdownQueryDto,
+  ) {
+    const client = this.supabaseService.getUserClient(user.accessToken);
+    const { data, error } = await client.rpc('get_annual_category_breakdown', {
+      p_year: query.year,
+      p_type: query.type,
+      p_currency_code: query.currency_code ?? 'PYG',
     });
 
     throwIfSupabaseError(error);
