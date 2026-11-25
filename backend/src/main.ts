@@ -11,8 +11,29 @@ async function bootstrap() {
   const corsOrigin = configService.get('CORS_ORIGIN', { infer: true });
   const port = configService.get('PORT', { infer: true });
 
+  const allowedOrigins = corsOrigin
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const allowLocalhostAnyPort = allowedOrigins.some(
+    (item) => item.includes('localhost') || item.includes('127.0.0.1'),
+  );
+
   app.enableCors({
-    origin: corsOrigin === '*' ? true : corsOrigin.split(',').map((item) => item.trim()),
+    origin:
+      corsOrigin === '*'
+        ? true
+        : (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+            if (!origin || allowedOrigins.includes(origin)) {
+              callback(null, true);
+              return;
+            }
+            if (allowLocalhostAnyPort && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+              callback(null, true);
+              return;
+            }
+            callback(new Error('Origen no permitido por CORS.'));
+          },
     credentials: true,
   });
 

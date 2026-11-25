@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "MisRegistros (Flutter)",
+      "cwd": "mobile/mis_registros",
+      "request": "launch",
+      "type": "dart",
+      "toolArgs": [
+        "--dart-define-from-file=.env.json"
+      ]
+    },
+    {
+      "name": "MisRegistros (Web Chrome :8080)",
+      "cwd": "mobile/mis_registros",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome",
+      "toolArgs": [
+        "--web-port=8080",
+        "--dart-define-from-file=.env.json"
+      ]
+    }
+  ]
+}

@@ -27,7 +27,11 @@ export function throwIfSupabaseError(error: PostgrestError | null): void {
   }
 
   if (code === '42501') {
-    throw new ForbiddenException('No tienes permisos para realizar esta operación.');
+    throw new ForbiddenException(
+      error.message
+        ? `No tienes permisos para realizar esta operación (${error.message}).`
+        : 'No tienes permisos para realizar esta operación.',
+    );
   }
 
   if (
