@@ -385,6 +385,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
                 TextField(
                   controller: amountController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textInputAction: TextInputAction.done,
                   inputFormatters: [ThousandsSeparatorInputFormatter(allowDecimal: true)],
                   decoration: InputDecoration(
                     labelText: 'Importe a devolver',
@@ -555,10 +556,10 @@ class _TransactionsPageState extends State<TransactionsPage> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: amountController,
-                    keyboardType: TextInputType.numberWithOptions(
-                      decimal: true,
-                      signed: type == 'adjustment',
-                    ),
+                    keyboardType: type == 'adjustment'
+                        ? const TextInputType.numberWithOptions(decimal: true, signed: true)
+                        : const TextInputType.numberWithOptions(decimal: true),
+                    textInputAction: TextInputAction.done,
                     inputFormatters: [
                       ThousandsSeparatorInputFormatter(
                         allowNegative: type == 'adjustment',
@@ -737,10 +738,10 @@ class _TransactionsPageState extends State<TransactionsPage> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: amountController,
-                      keyboardType: TextInputType.numberWithOptions(
-                        decimal: true,
-                        signed: opType == 'adjustment',
-                      ),
+                      keyboardType: opType == 'adjustment'
+                          ? const TextInputType.numberWithOptions(decimal: true, signed: true)
+                          : const TextInputType.numberWithOptions(decimal: true),
+                      textInputAction: TextInputAction.done,
                       inputFormatters: [
                         ThousandsSeparatorInputFormatter(
                           allowNegative: opType == 'adjustment',
@@ -1048,12 +1049,12 @@ class _TransactionsPageState extends State<TransactionsPage> {
   }
 
   IconData _iconForType(String type) => switch (type) {
-        'income' => Icons.arrow_upward_rounded,
-        'expense' => Icons.arrow_downward_rounded,
-        'transfer' => Icons.swap_horiz_rounded,
-        'refund' => Icons.replay_rounded,
+        'income' => Icons.south_west_rounded,
+        'expense' => Icons.north_east_rounded,
+        'transfer' => Icons.sync_alt_rounded,
+        'refund' => Icons.undo_rounded,
         'adjustment' => Icons.tune_rounded,
-        _ => Icons.receipt_long_outlined,
+        _ => Icons.receipt_long_rounded,
       };
 
   String _labelForType(String type) => switch (type) {

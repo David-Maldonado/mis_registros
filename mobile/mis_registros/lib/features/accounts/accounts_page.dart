@@ -140,7 +140,10 @@ class _AccountsPageState extends State<AccountsPage> {
                 ],
                 TextField(
                   controller: initialController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                  keyboardType: selectedType == 'credit_card'
+                      ? const TextInputType.numberWithOptions(decimal: true, signed: true)
+                      : const TextInputType.numberWithOptions(decimal: true),
+                  textInputAction: TextInputAction.done,
                   inputFormatters: [
                     ThousandsSeparatorInputFormatter(
                       allowNegative: selectedType == 'credit_card',
@@ -161,6 +164,7 @@ class _AccountsPageState extends State<AccountsPage> {
                   TextField(
                     controller: limitController,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textInputAction: TextInputAction.done,
                     inputFormatters: [
                       ThousandsSeparatorInputFormatter(allowDecimal: true),
                     ],
@@ -354,11 +358,11 @@ class _AccountsPageState extends State<AccountsPage> {
   }
 
   IconData _iconForType(String type) => switch (type) {
-        'cash' => Icons.payments_outlined,
-        'bank' => Icons.account_balance_outlined,
-        'e_wallet' => Icons.account_balance_wallet_outlined,
-        'credit_card' => Icons.credit_card_outlined,
-        _ => Icons.savings_outlined,
+        'cash' => Icons.savings_rounded,
+        'bank' => Icons.account_balance_rounded,
+        'e_wallet' => Icons.contactless_rounded,
+        'credit_card' => Icons.credit_score_rounded,
+        _ => Icons.account_balance_wallet_rounded,
       };
 
   String _labelForType(String type) => switch (type) {

@@ -695,7 +695,7 @@ class _AnnualCapsulesCard extends StatelessWidget {
                       tooltip: 'Ver desglose anual por categoría',
                       visualDensity: VisualDensity.compact,
                       onPressed: onOpenBreakdown,
-                      icon: const Icon(Icons.pie_chart_outline, size: 18),
+                      icon: const Icon(Icons.donut_large_rounded, size: 18),
                     ),
                   ],
                 ),

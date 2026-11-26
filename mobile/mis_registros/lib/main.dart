@@ -48,7 +48,7 @@ class MisRegistrosApp extends StatelessWidget {
       listenable: themeController,
       builder: (context, _) {
         return MaterialApp(
-          title: 'MisRegistros',
+          title: 'Ñangareko',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(themeController.palette),
           darkTheme: AppTheme.dark(themeController.palette),
@@ -71,7 +71,7 @@ class MisRegistrosConfigErrorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'MisRegistros',
+      title: 'Ñangareko',
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: themeController.themeMode,
