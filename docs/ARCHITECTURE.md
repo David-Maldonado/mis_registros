@@ -161,7 +161,7 @@ Las siguientes decisiones están aprobadas:
   - Convenciones de la API REST: `/currencies`, `/profile`, `/accounts`, `/accounts/balances`, `/categories`, `/transactions` (con paginación por cursor `(occurred_at DESC, id DESC)` y endpoints específicos por tipo de operación, reemplazo atómico `PUT /transactions/:id`, descripción y anulación) y `/reports/monthly-summary` / `/reports/monthly-account-flows`.
 
 - **Flutter (`mobile/mis_registros/`):**
-  - Dependencias aprobadas: `supabase_flutter` (exclusivamente para Supabase Auth y persistencia de sesión por plataforma), `http`, `uuid` e `intl`.
+  - Dependencias aprobadas: `supabase_flutter` (exclusivamente para Supabase Auth y persistencia de sesión por plataforma), `http`, `uuid`, `intl` y `shared_preferences` (persistencia local de tema y paleta).
   - Configuración por entorno: `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `API_BASE_URL` mediante `--dart-define-from-file=.env.json` (excluido de Git).
   - Estructura modular en `lib/`: `core/` (`config`, `network`, `theme` con soporte multitema claro/oscuro/sistema, `utils`) y `features/` (`auth`, `shell`, `summary`, `transactions`, `accounts`, `categories`, `profile`).
   - Navegación adaptable: `NavigationBar` inferior + FAB en pantallas pequeñas (`< 840px`) y `NavigationRail` lateral en Web/escritorio (`>= 840px`).

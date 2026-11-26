@@ -10,6 +10,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final themeController = ThemeController();
+  await themeController.loadSavedPreferences();
 
   if (!AppConfig.isConfigured) {
     runApp(MisRegistrosConfigErrorApp(themeController: themeController));

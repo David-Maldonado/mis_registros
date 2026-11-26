@@ -2,13 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/network/api_client.dart';
+import '../../core/state/ledger_refresh_notifier.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/currency_formatter.dart';
 
 class TransactionsPage extends StatefulWidget {
-  const TransactionsPage({super.key, required this.apiClient});
+  const TransactionsPage({
+    super.key,
+    required this.apiClient,
+    this.refreshNotifier,
+  });
 
   final ApiClient apiClient;
+  final LedgerRefreshNotifier? refreshNotifier;
 
   @override
   State<TransactionsPage> createState() => _TransactionsPageState();
@@ -24,14 +30,32 @@ class _TransactionsPageState extends State<TransactionsPage> {
   List<Map<String, dynamic>> _items = const [];
   Map<String, dynamic>? _nextCursor;
 
+  List<Map<String, dynamic>> _accounts = const [];
+  List<Map<String, dynamic>> _categories = const [];
   Map<String, String> _accountNames = const {};
   Map<String, String> _categoryNames = const {};
   Map<String, Map<String, dynamic>> _currenciesById = const {};
 
+  // Filtros locales rápidos sobre el historial cargado
+  String _filterType = 'all';
+  String? _filterAccountId;
+  bool _showVoided = true;
+
   @override
   void initState() {
     super.initState();
+    widget.refreshNotifier?.addListener(_onExternalChange);
     _loadInitial();
+  }
+
+  @override
+  void dispose() {
+    widget.refreshNotifier?.removeListener(_onExternalChange);
+    super.dispose();
+  }
+
+  void _onExternalChange() {
+    if (mounted) _loadInitial();
   }
 
   Future<void> _loadInitial() async {
@@ -41,7 +65,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
     });
     try {
       final results = await Future.wait([
-        widget.apiClient.get('/transactions', query: {'limit': '20'}),
+        widget.apiClient.get('/transactions', query: {'limit': '30'}),
         widget.apiClient.get('/accounts'),
         widget.apiClient.get('/categories'),
         widget.apiClient.get('/currencies'),
@@ -57,6 +81,8 @@ class _TransactionsPageState extends State<TransactionsPage> {
       setState(() {
         _items = List<Map<String, dynamic>>.from(txRes['items'] as List);
         _nextCursor = txRes['next_cursor'] as Map<String, dynamic>?;
+        _accounts = accounts;
+        _categories = categories;
         _accountNames = {
           for (final a in accounts) a['id'] as String: a['name'] as String,
         };
@@ -80,7 +106,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
     setState(() => _loadingMore = true);
     try {
       final res = await widget.apiClient.get('/transactions', query: {
-        'limit': '20',
+        'limit': '30',
         'cursor_occurred_at': _nextCursor!['occurred_at'] as String,
         'cursor_id': _nextCursor!['id'] as String,
       }) as Map<String, dynamic>;
@@ -148,6 +174,29 @@ class _TransactionsPageState extends State<TransactionsPage> {
     return 'Entró a: $accName';
   }
 
+  Future<DateTime?> _pickDateTime(BuildContext ctx, DateTime current) async {
+    final pickedDate = await showDatePicker(
+      context: ctx,
+      initialDate: current,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (pickedDate == null || !ctx.mounted) return null;
+
+    final pickedTime = await showTimePicker(
+      context: ctx,
+      initialTime: TimeOfDay.fromDateTime(current),
+    );
+    final time = pickedTime ?? TimeOfDay.fromDateTime(current);
+    return DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      time.hour,
+      time.minute,
+    );
+  }
+
   Future<void> _showTransactionDetail(Map<String, dynamic> tx) async {
     final type = tx['type'] as String? ?? '';
     final isVoided = tx['status'] == 'voided';
@@ -165,7 +214,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
       builder: (ctx) {
         final theme = Theme.of(ctx);
         return SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -175,9 +224,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Chip(label: Text(_labelForType(type))),
-                    Chip(
-                      label: Text(isVoided ? 'Anulada' : 'Contabilizada'),
-                    ),
+                    Chip(label: Text(isVoided ? 'Anulada' : 'Contabilizada')),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -198,23 +245,382 @@ class _TransactionsPageState extends State<TransactionsPage> {
                     value: tx['void_reason'].toString(),
                   ),
                 const SizedBox(height: 16),
-                if (!isVoided)
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        await _voidTransaction(tx['id'] as String);
-                      },
-                      icon: const Icon(Icons.block_outlined),
-                      label: const Text('Anular operación'),
-                    ),
+                if (!isVoided) ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _showEditDescriptionDialog(tx);
+                        },
+                        icon: const Icon(Icons.edit_note_outlined),
+                        label: const Text('Editar nota'),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _showReplaceTransactionDialog(tx);
+                        },
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('Editar operación'),
+                      ),
+                      if (type == 'expense')
+                        FilledButton.tonalIcon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _showRefundDialog(tx);
+                          },
+                          icon: const Icon(Icons.replay_rounded),
+                          label: const Text('Devolución'),
+                        ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: theme.colorScheme.error,
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          await _voidTransaction(tx['id'] as String);
+                        },
+                        icon: const Icon(Icons.block_outlined),
+                        label: const Text('Anular'),
+                      ),
+                    ],
                   ),
+                ],
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Future<void> _showEditDescriptionDialog(Map<String, dynamic> tx) async {
+    final controller = TextEditingController(text: (tx['description'] as String?) ?? '');
+    String? dialogError;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Editar descripción'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Descripción'),
+              ),
+              if (dialogError != null) ...[
+                const SizedBox(height: 10),
+                Text(dialogError!, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  await widget.apiClient.patch('/transactions/${tx['id']}/description', body: {
+                    'description': controller.text.trim().isEmpty ? null : controller.text.trim(),
+                  });
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  widget.refreshNotifier?.notifyDataChanged();
+                  await _loadInitial();
+                } catch (e) {
+                  setDialogState(() => dialogError = e.toString());
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRefundDialog(Map<String, dynamic> expenseTx) async {
+    final activeAccounts = _accounts
+        .where((a) => a['is_active'] == true && a['currency_id'] == expenseTx['currency_id'])
+        .toList();
+
+    if (activeAccounts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay cuentas activas en la moneda del gasto.')),
+      );
+      return;
+    }
+
+    String accountId = activeAccounts.first['id'] as String;
+    DateTime occurredAt = DateTime.now();
+    final amountController = TextEditingController();
+    final descController = TextEditingController();
+    String? dialogError;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Registrar devolución'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: accountId,
+                  decoration: const InputDecoration(labelText: 'Cuenta receptora'),
+                  items: activeAccounts
+                      .map((a) => DropdownMenuItem(
+                            value: a['id'] as String,
+                            child: Text(a['name'] as String),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setDialogState(() => accountId = v!),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: amountController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [ThousandsSeparatorInputFormatter(allowDecimal: true)],
+                  decoration: InputDecoration(
+                    labelText: 'Importe a devolver',
+                    helperText: 'Máx. gasto original: ${_formatTxAmount(expenseTx)}',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.calendar_today_outlined),
+                  title: const Text('Fecha y hora'),
+                  subtitle: Text(_dateFormat.format(occurredAt)),
+                  onTap: () async {
+                    final picked = await _pickDateTime(ctx, occurredAt);
+                    if (picked != null) setDialogState(() => occurredAt = picked);
+                  },
+                ),
+                TextField(
+                  controller: descController,
+                  decoration: const InputDecoration(labelText: 'Descripción (opcional)'),
+                ),
+                if (dialogError != null) ...[
+                  const SizedBox(height: 10),
+                  Text(dialogError!, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  final desc = descController.text.trim();
+                  await widget.apiClient.post('/transactions/refund', body: {
+                    'client_request_id': _uuid.v4(),
+                    'original_transaction_id': expenseTx['id'],
+                    'account_id': accountId,
+                    'amount': CurrencyFormatter.toApiDecimal(amountController.text),
+                    'occurred_at': occurredAt.toUtc().toIso8601String(),
+                    if (desc.isNotEmpty) 'description': desc,
+                  });
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  widget.refreshNotifier?.notifyDataChanged();
+                  await _loadInitial();
+                } catch (e) {
+                  setDialogState(() => dialogError = e.toString());
+                }
+              },
+              child: const Text('Registrar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showReplaceTransactionDialog(Map<String, dynamic> tx) async {
+    final activeAccounts = _accounts.where((a) => a['is_active'] == true).toList();
+    final activeCategories = _categories.where((c) => c['is_active'] == true).toList();
+    if (activeAccounts.isEmpty) return;
+
+    final type = tx['type'] as String;
+    final movements = List<Map<String, dynamic>>.from(
+      (tx['account_movements'] as List?) ?? const [],
+    );
+
+    String accountId = activeAccounts.first['id'] as String;
+    String? toAccountId;
+    String initialAmountStr = (tx['amount'] ?? '0').toString();
+
+    if (type == 'transfer') {
+      for (final m in movements) {
+        final signed = (m['signed_amount'] ?? '0').toString();
+        if (signed.startsWith('-')) {
+          accountId = m['account_id'] as String;
+        } else {
+          toAccountId = m['account_id'] as String;
+        }
+      }
+    } else if (movements.isNotEmpty) {
+      accountId = movements.first['account_id'] as String;
+      if (type == 'adjustment') {
+        initialAmountStr = (movements.first['signed_amount'] ?? '0').toString();
+      }
+    }
+
+    if (!activeAccounts.any((a) => a['id'] == accountId)) {
+      accountId = activeAccounts.first['id'] as String;
+    }
+
+    String? categoryId = tx['category_id'] as String?;
+    DateTime occurredAt =
+        DateTime.tryParse((tx['occurred_at'] ?? '').toString())?.toLocal() ?? DateTime.now();
+
+    final currency = _currenciesById[tx['currency_id'] as String?];
+    final decimals = (currency?['decimal_places'] as num?)?.toInt() ?? 0;
+    final amountController = TextEditingController(
+      text: CurrencyFormatter.format(
+        amount: initialAmountStr,
+        symbol: '',
+        decimalPlaces: decimals,
+      ),
+    );
+    final descController = TextEditingController(text: (tx['description'] as String?) ?? '');
+    String? dialogError;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final matchingCategories = activeCategories.where((c) => c['type'] == type).toList();
+          if ((type == 'income' || type == 'expense') &&
+              (categoryId == null || !matchingCategories.any((c) => c['id'] == categoryId))) {
+            categoryId = matchingCategories.isNotEmpty ? matchingCategories.first['id'] as String : null;
+          }
+
+          return AlertDialog(
+            title: Text('Editar ${_labelForType(type).toLowerCase()}'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: accountId,
+                    decoration: InputDecoration(
+                      labelText: type == 'transfer' ? 'Cuenta origen' : 'Cuenta',
+                    ),
+                    items: activeAccounts
+                        .map((a) => DropdownMenuItem(
+                              value: a['id'] as String,
+                              child: Text(a['name'] as String),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setDialogState(() => accountId = v!),
+                  ),
+                  if (type == 'transfer') ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: activeAccounts.any((a) => a['id'] == toAccountId && a['id'] != accountId)
+                          ? toAccountId
+                          : null,
+                      decoration: const InputDecoration(labelText: 'Cuenta destino'),
+                      items: activeAccounts
+                          .where((a) => a['id'] != accountId)
+                          .map((a) => DropdownMenuItem(
+                                value: a['id'] as String,
+                                child: Text(a['name'] as String),
+                              ))
+                          .toList(),
+                      onChanged: (v) => setDialogState(() => toAccountId = v),
+                    ),
+                  ],
+                  if (type == 'income' || type == 'expense') ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: categoryId,
+                      decoration: const InputDecoration(labelText: 'Categoría'),
+                      items: matchingCategories
+                          .map((c) => DropdownMenuItem(
+                                value: c['id'] as String,
+                                child: Text(c['name'] as String),
+                              ))
+                          .toList(),
+                      onChanged: (v) => setDialogState(() => categoryId = v),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amountController,
+                    keyboardType: TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: type == 'adjustment',
+                    ),
+                    inputFormatters: [
+                      ThousandsSeparatorInputFormatter(
+                        allowNegative: type == 'adjustment',
+                        allowDecimal: true,
+                      ),
+                    ],
+                    decoration: InputDecoration(
+                      labelText: type == 'adjustment'
+                          ? 'Importe con signo (+ o -)'
+                          : 'Importe',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_today_outlined),
+                    title: const Text('Fecha y hora'),
+                    subtitle: Text(_dateFormat.format(occurredAt)),
+                    onTap: () async {
+                      final picked = await _pickDateTime(ctx, occurredAt);
+                      if (picked != null) setDialogState(() => occurredAt = picked);
+                    },
+                  ),
+                  TextField(
+                    controller: descController,
+                    decoration: const InputDecoration(labelText: 'Descripción (opcional)'),
+                  ),
+                  if (dialogError != null) ...[
+                    const SizedBox(height: 10),
+                    Text(dialogError!, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              FilledButton(
+                onPressed: () async {
+                  try {
+                    final desc = descController.text.trim();
+                    await widget.apiClient.put('/transactions/${tx['id']}', body: {
+                      'client_request_id': _uuid.v4(),
+                      'account_id': accountId,
+                      'amount': CurrencyFormatter.toApiDecimal(amountController.text),
+                      'occurred_at': occurredAt.toUtc().toIso8601String(),
+                      if (type == 'income' || type == 'expense') 'category_id': categoryId,
+                      if (type == 'transfer') 'to_account_id': toAccountId,
+                      if (desc.isNotEmpty) 'description': desc,
+                    });
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    widget.refreshNotifier?.notifyDataChanged();
+                    await _loadInitial();
+                  } catch (e) {
+                    setDialogState(() => dialogError = e.toString());
+                  }
+                },
+                child: const Text('Guardar cambios'),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -244,6 +650,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
       String accountId = accounts.first['id'] as String;
       String? toAccountId = accounts.length > 1 ? accounts[1]['id'] as String : null;
       String? categoryId;
+      DateTime occurredAt = DateTime.now();
       final amountController = TextEditingController();
       final descController = TextEditingController();
       String? dialogError;
@@ -253,7 +660,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setDialogState) {
             final matchingCategories = categories.where((c) => c['type'] == opType).toList();
-            if (opType != 'transfer' &&
+            if ((opType == 'income' || opType == 'expense') &&
                 (categoryId == null || !matchingCategories.any((c) => c['id'] == categoryId))) {
               categoryId = matchingCategories.isNotEmpty ? matchingCategories.first['id'] as String : null;
             }
@@ -271,6 +678,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
                         DropdownMenuItem(value: 'expense', child: Text('Gasto')),
                         DropdownMenuItem(value: 'income', child: Text('Ingreso')),
                         DropdownMenuItem(value: 'transfer', child: Text('Transferencia / Pago tarjeta')),
+                        DropdownMenuItem(value: 'adjustment', child: Text('Ajuste de saldo')),
                       ],
                       onChanged: (v) => setDialogState(() {
                         opType = v ?? 'expense';
@@ -294,7 +702,9 @@ class _TransactionsPageState extends State<TransactionsPage> {
                     if (opType == 'transfer') ...[
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        initialValue: toAccountId,
+                        initialValue: accounts.any((a) => a['id'] == toAccountId && a['id'] != accountId)
+                            ? toAccountId
+                            : null,
                         decoration: const InputDecoration(labelText: 'Cuenta destino'),
                         items: accounts
                             .where((a) => a['id'] != accountId)
@@ -305,7 +715,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
                             .toList(),
                         onChanged: (v) => setDialogState(() => toAccountId = v),
                       ),
-                    ] else ...[
+                    ] else if (opType == 'income' || opType == 'expense') ...[
                       const SizedBox(height: 12),
                       if (matchingCategories.isEmpty)
                         const Text(
@@ -327,13 +737,33 @@ class _TransactionsPageState extends State<TransactionsPage> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: amountController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: TextInputType.numberWithOptions(
+                        decimal: true,
+                        signed: opType == 'adjustment',
+                      ),
                       inputFormatters: [
-                        ThousandsSeparatorInputFormatter(allowDecimal: true),
+                        ThousandsSeparatorInputFormatter(
+                          allowNegative: opType == 'adjustment',
+                          allowDecimal: true,
+                        ),
                       ],
-                      decoration: const InputDecoration(labelText: 'Importe'),
+                      decoration: InputDecoration(
+                        labelText: opType == 'adjustment'
+                            ? 'Importe (+ suma, - resta)'
+                            : 'Importe',
+                      ),
                     ),
                     const SizedBox(height: 12),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.calendar_today_outlined),
+                      title: const Text('Fecha y hora'),
+                      subtitle: Text(_dateFormat.format(occurredAt)),
+                      onTap: () async {
+                        final picked = await _pickDateTime(ctx, occurredAt);
+                        if (picked != null) setDialogState(() => occurredAt = picked);
+                      },
+                    ),
                     TextField(
                       controller: descController,
                       decoration: const InputDecoration(labelText: 'Descripción (opcional)'),
@@ -351,7 +781,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
                   onPressed: () async {
                     try {
                       final clientRequestId = _uuid.v4();
-                      final occurredAt = DateTime.now().toUtc().toIso8601String();
+                      final occurredIso = occurredAt.toUtc().toIso8601String();
                       final amount = CurrencyFormatter.toApiDecimal(amountController.text);
                       final desc = descController.text.trim();
 
@@ -361,7 +791,15 @@ class _TransactionsPageState extends State<TransactionsPage> {
                           'from_account_id': accountId,
                           'to_account_id': toAccountId,
                           'amount': amount,
-                          'occurred_at': occurredAt,
+                          'occurred_at': occurredIso,
+                          if (desc.isNotEmpty) 'description': desc,
+                        });
+                      } else if (opType == 'adjustment') {
+                        await widget.apiClient.post('/transactions/adjustment', body: {
+                          'client_request_id': clientRequestId,
+                          'account_id': accountId,
+                          'signed_amount': amount,
+                          'occurred_at': occurredIso,
                           if (desc.isNotEmpty) 'description': desc,
                         });
                       } else {
@@ -370,11 +808,12 @@ class _TransactionsPageState extends State<TransactionsPage> {
                           'account_id': accountId,
                           'category_id': categoryId,
                           'amount': amount,
-                          'occurred_at': occurredAt,
+                          'occurred_at': occurredIso,
                           if (desc.isNotEmpty) 'description': desc,
                         });
                       }
                       if (ctx.mounted) Navigator.pop(ctx);
+                      widget.refreshNotifier?.notifyDataChanged();
                       await _loadInitial();
                     } catch (e) {
                       setDialogState(() => dialogError = e.toString());
@@ -397,6 +836,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
   Future<void> _voidTransaction(String id) async {
     try {
       await widget.apiClient.post('/transactions/$id/void', body: {'void_reason': 'voided_by_user'});
+      widget.refreshNotifier?.notifyDataChanged();
       await _loadInitial();
     } catch (e) {
       if (mounted) {
@@ -405,10 +845,27 @@ class _TransactionsPageState extends State<TransactionsPage> {
     }
   }
 
+  List<Map<String, dynamic>> get _filteredItems {
+    return _items.where((tx) {
+      if (!_showVoided && tx['status'] == 'voided') return false;
+      if (_filterType != 'all' && tx['type'] != _filterType) return false;
+      if (_filterAccountId != null) {
+        final movements = List<Map<String, dynamic>>.from(
+          (tx['account_movements'] as List?) ?? const [],
+        );
+        if (!movements.any((m) => m['account_id'] == _filterAccountId)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.extension<FinancialColors>()!;
+    final visibleItems = _filteredItems;
 
     return RefreshIndicator(
       onRefresh: _loadInitial,
@@ -427,19 +884,94 @@ class _TransactionsPageState extends State<TransactionsPage> {
             ],
           ),
           const SizedBox(height: 12),
+
+          // Barra de filtros rápidos
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _FilterChipItem(
+                  label: 'Todos',
+                  selected: _filterType == 'all',
+                  onSelected: () => setState(() => _filterType = 'all'),
+                ),
+                const SizedBox(width: 6),
+                _FilterChipItem(
+                  label: 'Gastos',
+                  selected: _filterType == 'expense',
+                  onSelected: () => setState(() => _filterType = 'expense'),
+                ),
+                const SizedBox(width: 6),
+                _FilterChipItem(
+                  label: 'Ingresos',
+                  selected: _filterType == 'income',
+                  onSelected: () => setState(() => _filterType = 'income'),
+                ),
+                const SizedBox(width: 6),
+                _FilterChipItem(
+                  label: 'Transferencias',
+                  selected: _filterType == 'transfer',
+                  onSelected: () => setState(() => _filterType = 'transfer'),
+                ),
+                const SizedBox(width: 6),
+                _FilterChipItem(
+                  label: 'Devoluciones',
+                  selected: _filterType == 'refund',
+                  onSelected: () => setState(() => _filterType = 'refund'),
+                ),
+                const SizedBox(width: 6),
+                _FilterChipItem(
+                  label: 'Ajustes',
+                  selected: _filterType == 'adjustment',
+                  onSelected: () => setState(() => _filterType = 'adjustment'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (_accounts.isNotEmpty)
+                DropdownButton<String?>(
+                  value: _filterAccountId,
+                  hint: const Text('Todas las cuentas'),
+                  isDense: true,
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('Todas las cuentas')),
+                    ..._accounts.map(
+                      (a) => DropdownMenuItem<String?>(
+                        value: a['id'] as String,
+                        child: Text(a['name'] as String),
+                      ),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => _filterAccountId = v),
+                ),
+              FilterChip(
+                label: const Text('Ver anuladas'),
+                selected: _showVoided,
+                onSelected: (v) => setState(() => _showVoided = v),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
           if (_loading)
             const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator()))
           else if (_error != null)
             Text(_error!, style: TextStyle(color: theme.colorScheme.error))
-          else if (_items.isEmpty)
+          else if (visibleItems.isEmpty)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(20),
-                child: Text('No hay movimientos registrados todavía.'),
+                child: Text('No hay movimientos que coincidan con los filtros actuales.'),
               ),
             )
           else ...[
-            ..._items.map((tx) {
+            ...visibleItems.map((tx) {
               final type = tx['type'] as String? ?? '';
               final isVoided = tx['status'] == 'voided';
               final color = isVoided
@@ -532,6 +1064,27 @@ class _TransactionsPageState extends State<TransactionsPage> {
         'adjustment' => 'Ajuste',
         _ => type,
       };
+}
+
+class _FilterChipItem extends StatelessWidget {
+  const _FilterChipItem({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onSelected(),
+    );
+  }
 }
 
 class _DetailRow extends StatelessWidget {

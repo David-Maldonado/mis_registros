@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/network/api_client.dart';
+import '../../core/state/ledger_refresh_notifier.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/theme_controller.dart';
 import '../accounts/accounts_page.dart';
@@ -23,7 +24,14 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
+  final _refreshNotifier = LedgerRefreshNotifier();
   int _selectedIndex = 0;
+
+  @override
+  void dispose() {
+    _refreshNotifier.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,10 +39,10 @@ class _AppShellState extends State<AppShell> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final pages = [
-      SummaryPage(apiClient: widget.apiClient),
-      TransactionsPage(apiClient: widget.apiClient),
-      AccountsPage(apiClient: widget.apiClient),
-      CategoriesPage(apiClient: widget.apiClient),
+      SummaryPage(apiClient: widget.apiClient, refreshNotifier: _refreshNotifier),
+      TransactionsPage(apiClient: widget.apiClient, refreshNotifier: _refreshNotifier),
+      AccountsPage(apiClient: widget.apiClient, refreshNotifier: _refreshNotifier),
+      CategoriesPage(apiClient: widget.apiClient, refreshNotifier: _refreshNotifier),
       ProfilePage(
         apiClient: widget.apiClient,
         themeController: widget.themeController,
