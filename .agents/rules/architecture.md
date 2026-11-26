@@ -15,7 +15,8 @@ Estas reglas complementan a `AGENTS.md` definiendo los límites entre componente
   - **NestJS (TypeScript):** backend REST, responsable de la lógica de negocio, validaciones y autorización del lado servidor.
   - **Supabase Auth:** proveedor de autenticación y gestión de identidad.
   - **Supabase PostgreSQL:** persistencia de datos y aislamiento entre usuarios mediante Row Level Security (RLS).
-- **Diseño arquitectónico detallado en definición:** la estructura modular de Flutter y NestJS, contratos API, modelo entidad-relación, migraciones, políticas RLS específicas y estrategias de navegación, sesiones y despliegue aún están pendientes de aprobación (ver sección de decisiones pendientes en `docs/ARCHITECTURE.md`).
+- **Modelo de datos aprobado:** el modelo entidad-relación, las migraciones, los roles, las políticas RLS y las funciones RPC están definidos en `docs/DATA_MODEL.md` (pendientes de implementación y pruebas).
+- **Diseño arquitectónico detallado en definición:** la estructura modular de Flutter y NestJS, los contratos API y las estrategias de navegación, sesiones y despliegue aún están pendientes de aprobación (ver `docs/ARCHITECTURE.md`).
 - No asumir como aprobada ninguna decisión pendiente ni alterar la distribución de responsabilidades del stack aprobado sin justificación técnica y aprobación previa.
 
 ## 2. Separación de responsabilidades y contratos

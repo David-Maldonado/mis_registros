@@ -1,7 +1,7 @@
 # Arquitectura de MisRegistros
 
-**Versión:** 0.2  
-**Estado:** Stack tecnológico base aprobado; diseño arquitectónico detallado en definición
+**Versión:** 0.3  
+**Estado:** Stack tecnológico base y modelo de datos aprobados; diseño de Flutter y NestJS en definición
 
 ## 1. Visión general
 
@@ -151,17 +151,24 @@ La solución seguirá estos principios:
 - Consistencia entre plataformas.
 - Diseño preparado para evolución funcional.
 
-## 7. Decisiones pendientes de implementación
+## 7. Decisiones definidas
+
+Las siguientes decisiones están aprobadas:
+
+- **Base de datos ([DATA_MODEL.md](DATA_MODEL.md)):** modelo entidad-relación de PostgreSQL, estrategia de migraciones con Supabase CLI en `supabase/migrations/`, políticas RLS, roles y privilegios por tabla, escrituras vía RPC, lecturas agregadas vía vistas/funciones con RLS y pruebas con pgTAP (`supabase test db`).
+- **Backend (`backend/`):**
+  - Organización modular en NestJS: `config/`, `supabase/` (cliente por solicitud con JWT del usuario, sin `service_role`), `auth/` (`SupabaseAuthGuard` + `@CurrentUser()`), `common/` (filtro global de excepciones y `ValidationPipe`), y módulos de dominio (`currencies`, `profiles`, `accounts`, `categories`, `transactions`, `reports`).
+  - Convenciones de la API REST: `/currencies`, `/profile`, `/accounts`, `/accounts/balances`, `/categories`, `/transactions` (con paginación por cursor `(occurred_at DESC, id DESC)` y endpoints específicos por tipo de operación, reemplazo atómico `PUT /transactions/:id`, descripción y anulación) y `/reports/monthly-summary` / `/reports/monthly-account-flows`.
+
+- **Flutter (`mobile/mis_registros/`):**
+  - Dependencias aprobadas: `supabase_flutter` (exclusivamente para Supabase Auth y persistencia de sesión por plataforma), `http`, `uuid`, `intl` y `shared_preferences` (persistencia local de tema y paleta).
+  - Configuración por entorno: `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `API_BASE_URL` mediante `--dart-define-from-file=.env.json` (excluido de Git).
+  - Estructura modular en `lib/`: `core/` (`config`, `network`, `theme` con soporte multitema claro/oscuro/sistema, `utils`) y `features/` (`auth`, `shell`, `summary`, `transactions`, `accounts`, `categories`, `profile`).
+  - Navegación adaptable: `NavigationBar` inferior + FAB en pantallas pequeñas (`< 840px`) y `NavigationRail` lateral en Web/escritorio (`>= 840px`).
+
+## 8. Decisiones pendientes de implementación
 
 Los siguientes aspectos se definirán antes de su implementación:
 
-- Estructura modular de Flutter.
-- Organización de módulos y capas en NestJS.
-- Contratos y convenciones de la API REST.
-- Modelo entidad-relación de PostgreSQL.
-- Estrategia de migraciones.
-- Políticas RLS específicas por tabla.
-- Estrategia de pruebas automatizadas.
-- Estrategia de navegación y diseño adaptable.
-- Gestión de sesiones y almacenamiento según plataforma.
+- Estrategia de pruebas automatizadas de NestJS y Flutter.
 - Configuración de despliegue de la aplicación Web.
