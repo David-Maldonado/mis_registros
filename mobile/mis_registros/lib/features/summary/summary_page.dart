@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/network/api_client.dart';
+import '../../core/state/ledger_refresh_notifier.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/currency_formatter.dart';
 import 'annual_breakdown_page.dart';
 
 class SummaryPage extends StatefulWidget {
-  const SummaryPage({super.key, required this.apiClient});
+  const SummaryPage({
+    super.key,
+    required this.apiClient,
+    this.refreshNotifier,
+  });
 
   final ApiClient apiClient;
+  final LedgerRefreshNotifier? refreshNotifier;
 
   @override
   State<SummaryPage> createState() => _SummaryPageState();
@@ -61,7 +67,18 @@ class _SummaryPageState extends State<SummaryPage> {
     final now = DateTime.now();
     _year = now.year;
     _month = now.month;
+    widget.refreshNotifier?.addListener(_onExternalChange);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    widget.refreshNotifier?.removeListener(_onExternalChange);
+    super.dispose();
+  }
+
+  void _onExternalChange() {
+    if (mounted) _loadData();
   }
 
   Future<void> _loadData() async {
@@ -678,7 +695,7 @@ class _AnnualCapsulesCard extends StatelessWidget {
                       tooltip: 'Ver desglose anual por categoría',
                       visualDensity: VisualDensity.compact,
                       onPressed: onOpenBreakdown,
-                      icon: const Icon(Icons.pie_chart_outline, size: 18),
+                      icon: const Icon(Icons.donut_large_rounded, size: 18),
                     ),
                   ],
                 ),

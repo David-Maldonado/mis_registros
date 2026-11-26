@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import '../../core/network/api_client.dart';
+import '../../core/state/ledger_refresh_notifier.dart';
 import '../../core/theme/app_theme.dart';
 
 class CategoriesPage extends StatefulWidget {
-  const CategoriesPage({super.key, required this.apiClient});
+  const CategoriesPage({
+    super.key,
+    required this.apiClient,
+    this.refreshNotifier,
+  });
 
   final ApiClient apiClient;
+  final LedgerRefreshNotifier? refreshNotifier;
 
   @override
   State<CategoriesPage> createState() => _CategoriesPageState();
@@ -20,7 +26,18 @@ class _CategoriesPageState extends State<CategoriesPage> {
   @override
   void initState() {
     super.initState();
+    widget.refreshNotifier?.addListener(_onExternalChange);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    widget.refreshNotifier?.removeListener(_onExternalChange);
+    super.dispose();
+  }
+
+  void _onExternalChange() {
+    if (mounted) _loadData();
   }
 
   Future<void> _loadData() async {
@@ -127,6 +144,23 @@ class _CategoriesPageState extends State<CategoriesPage> {
               ),
             ),
             actions: [
+              if (isEditing)
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(ctx).colorScheme.error,
+                  ),
+                  onPressed: () async {
+                    try {
+                      await widget.apiClient.delete('/categories/${existing['id']}');
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      widget.refreshNotifier?.notifyDataChanged();
+                      await _loadData();
+                    } catch (e) {
+                      setDialogState(() => dialogError = e.toString());
+                    }
+                  },
+                  child: const Text('Eliminar'),
+                ),
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
               FilledButton(
                 onPressed: () async {
@@ -147,6 +181,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
                     }
                     if (ctx.mounted) Navigator.pop(ctx);
                     setState(() => _selectedType = formType);
+                    widget.refreshNotifier?.notifyDataChanged();
                     await _loadData();
                   } catch (e) {
                     setDialogState(() => dialogError = e.toString());

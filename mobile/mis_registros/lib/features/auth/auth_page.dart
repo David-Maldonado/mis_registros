@@ -172,11 +172,14 @@ class _AuthPageState extends State<AuthPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('MisRegistros'),
+        title: const Text(
+          'Ñangareko',
+          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
+        ),
         actions: [
           IconButton(
             tooltip: isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro',
-            icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+            icon: Icon(isDark ? Icons.wb_sunny_rounded : Icons.nights_stay_rounded),
             onPressed: () => widget.themeController.toggleLightDark(context),
           ),
         ],

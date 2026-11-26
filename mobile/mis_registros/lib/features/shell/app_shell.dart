@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/network/api_client.dart';
+import '../../core/state/ledger_refresh_notifier.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/theme_controller.dart';
 import '../accounts/accounts_page.dart';
@@ -23,7 +24,14 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
+  final _refreshNotifier = LedgerRefreshNotifier();
   int _selectedIndex = 0;
+
+  @override
+  void dispose() {
+    _refreshNotifier.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,10 +39,10 @@ class _AppShellState extends State<AppShell> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final pages = [
-      SummaryPage(apiClient: widget.apiClient),
-      TransactionsPage(apiClient: widget.apiClient),
-      AccountsPage(apiClient: widget.apiClient),
-      CategoriesPage(apiClient: widget.apiClient),
+      SummaryPage(apiClient: widget.apiClient, refreshNotifier: _refreshNotifier),
+      TransactionsPage(apiClient: widget.apiClient, refreshNotifier: _refreshNotifier),
+      AccountsPage(apiClient: widget.apiClient, refreshNotifier: _refreshNotifier),
+      CategoriesPage(apiClient: widget.apiClient, refreshNotifier: _refreshNotifier),
       ProfilePage(
         apiClient: widget.apiClient,
         themeController: widget.themeController,
@@ -43,11 +51,25 @@ class _AppShellState extends State<AppShell> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('MisRegistros'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.shield_moon_rounded,
+              color: Theme.of(context).colorScheme.primary,
+              size: 22,
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Ñangareko',
+              style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
+            ),
+          ],
+        ),
         actions: [
           PopupMenuButton<AppColorPalette>(
             tooltip: 'Elegir color',
-            icon: const Icon(Icons.palette_outlined),
+            icon: const Icon(Icons.color_lens_rounded),
             initialValue: widget.themeController.palette,
             onSelected: widget.themeController.setPalette,
             itemBuilder: (context) => AppColorPalette.values
@@ -67,7 +89,7 @@ class _AppShellState extends State<AppShell> {
                         const SizedBox(width: 12),
                         Expanded(child: Text(p.label)),
                         if (p == widget.themeController.palette)
-                          const Icon(Icons.check, size: 18),
+                          const Icon(Icons.check_rounded, size: 18),
                       ],
                     ),
                   ),
@@ -76,12 +98,12 @@ class _AppShellState extends State<AppShell> {
           ),
           IconButton(
             tooltip: isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro',
-            icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+            icon: Icon(isDark ? Icons.wb_sunny_rounded : Icons.nights_stay_rounded),
             onPressed: () => widget.themeController.toggleLightDark(context),
           ),
           IconButton(
             tooltip: 'Perfil y configuración',
-            icon: const Icon(Icons.person_outline),
+            icon: const Icon(Icons.manage_accounts_rounded),
             onPressed: () => setState(() => _selectedIndex = 4),
           ),
         ],
@@ -95,28 +117,28 @@ class _AppShellState extends State<AppShell> {
               labelType: NavigationRailLabelType.all,
               destinations: const [
                 NavigationRailDestination(
-                  icon: Icon(Icons.pie_chart_outline),
-                  selectedIcon: Icon(Icons.pie_chart),
+                  icon: Icon(Icons.insights_outlined),
+                  selectedIcon: Icon(Icons.insights_rounded),
                   label: Text('Resumen'),
                 ),
                 NavigationRailDestination(
-                  icon: Icon(Icons.receipt_long_outlined),
-                  selectedIcon: Icon(Icons.receipt_long),
+                  icon: Icon(Icons.swap_vert_outlined),
+                  selectedIcon: Icon(Icons.swap_vert_rounded),
                   label: Text('Movimientos'),
                 ),
                 NavigationRailDestination(
                   icon: Icon(Icons.account_balance_wallet_outlined),
-                  selectedIcon: Icon(Icons.account_balance_wallet),
+                  selectedIcon: Icon(Icons.account_balance_wallet_rounded),
                   label: Text('Cuentas'),
                 ),
                 NavigationRailDestination(
-                  icon: Icon(Icons.category_outlined),
-                  selectedIcon: Icon(Icons.category),
+                  icon: Icon(Icons.grid_view_outlined),
+                  selectedIcon: Icon(Icons.grid_view_rounded),
                   label: Text('Categorías'),
                 ),
                 NavigationRailDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person),
+                  icon: Icon(Icons.manage_accounts_outlined),
+                  selectedIcon: Icon(Icons.manage_accounts_rounded),
                   label: Text('Perfil'),
                 ),
               ],
@@ -140,23 +162,23 @@ class _AppShellState extends State<AppShell> {
               onDestinationSelected: (i) => setState(() => _selectedIndex = i),
               destinations: const [
                 NavigationDestination(
-                  icon: Icon(Icons.pie_chart_outline),
-                  selectedIcon: Icon(Icons.pie_chart),
+                  icon: Icon(Icons.insights_outlined),
+                  selectedIcon: Icon(Icons.insights_rounded),
                   label: 'Resumen',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.receipt_long_outlined),
-                  selectedIcon: Icon(Icons.receipt_long),
+                  icon: Icon(Icons.swap_vert_outlined),
+                  selectedIcon: Icon(Icons.swap_vert_rounded),
                   label: 'Movimientos',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.account_balance_wallet_outlined),
-                  selectedIcon: Icon(Icons.account_balance_wallet),
+                  selectedIcon: Icon(Icons.account_balance_wallet_rounded),
                   label: 'Cuentas',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.category_outlined),
-                  selectedIcon: Icon(Icons.category),
+                  icon: Icon(Icons.grid_view_outlined),
+                  selectedIcon: Icon(Icons.grid_view_rounded),
                   label: 'Categorías',
                 ),
               ],
