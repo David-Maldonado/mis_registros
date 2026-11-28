@@ -51,6 +51,7 @@ class _AppShellState extends State<AppShell> {
 
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 16,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -60,9 +61,12 @@ class _AppShellState extends State<AppShell> {
               size: 22,
             ),
             const SizedBox(width: 8),
-            const Text(
-              'Ñangareko',
-              style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
+            const Flexible(
+              child: Text(
+                'Ñangareko',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3),
+              ),
             ),
           ],
         ),

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../core/network/api_client.dart';
+import '../../core/utils/app_feedback.dart';
 import '../../core/utils/currency_formatter.dart';
 
 class AnnualBreakdownPage extends StatefulWidget {
@@ -8,16 +9,33 @@ class AnnualBreakdownPage extends StatefulWidget {
     super.key,
     required this.apiClient,
     required this.initialYear,
+    this.initialMonth,
   });
 
   final ApiClient apiClient;
   final int initialYear;
+  final int? initialMonth;
 
   @override
   State<AnnualBreakdownPage> createState() => _AnnualBreakdownPageState();
 }
 
 class _AnnualBreakdownPageState extends State<AnnualBreakdownPage> {
+  static const _monthNames = [
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+  ];
+
   static const _palette = [
     Color(0xFF0F766E),
     Color(0xFF2563EB),
@@ -32,6 +50,7 @@ class _AnnualBreakdownPageState extends State<AnnualBreakdownPage> {
   ];
 
   late int _year;
+  int? _month;
   String _selectedType = 'expense';
   bool _loading = true;
   String? _error;
@@ -41,6 +60,7 @@ class _AnnualBreakdownPageState extends State<AnnualBreakdownPage> {
   void initState() {
     super.initState();
     _year = widget.initialYear;
+    _month = widget.initialMonth;
     _loadData();
   }
 
@@ -50,21 +70,24 @@ class _AnnualBreakdownPageState extends State<AnnualBreakdownPage> {
       _error = null;
     });
     try {
-      final data = await widget.apiClient.get(
-        '/reports/annual-category-breakdown',
-        query: {
-          'year': '$_year',
-          'type': _selectedType,
-          'currency_code': 'PYG',
-        },
-      );
+      final endpoint = _month == null
+          ? '/reports/annual-category-breakdown'
+          : '/reports/monthly-category-breakdown';
+      final query = <String, String>{
+        'year': '$_year',
+        if (_month != null) 'month': '$_month',
+        'type': _selectedType,
+        'currency_code': 'PYG',
+      };
+
+      final data = await widget.apiClient.get(endpoint, query: query);
       if (!mounted) return;
       setState(() {
         _rows = List<Map<String, dynamic>>.from(data as List);
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = AppFeedback.formatError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -88,9 +111,20 @@ class _AnnualBreakdownPageState extends State<AnnualBreakdownPage> {
       totalAmount += double.tryParse((row['total_amount'] ?? '0').toString()) ?? 0;
     }
 
+    final periodTitle = _month == null
+        ? 'Enero - Diciembre $_year'
+        : '${_monthNames[_month! - 1]} $_year';
+    final emptyPeriodText = _month == null
+        ? 'de enero a diciembre de $_year'
+        : 'en ${_monthNames[_month! - 1].toLowerCase()} de $_year';
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Desglose anual por categoría'),
+        title: Text(
+          _month == null
+              ? 'Desglose anual por categoría'
+              : 'Desglose de ${_monthNames[_month! - 1]}',
+        ),
       ),
       body: RefreshIndicator(
         onRefresh: _loadData,
@@ -100,10 +134,11 @@ class _AnnualBreakdownPageState extends State<AnnualBreakdownPage> {
             Wrap(
               alignment: WrapAlignment.spaceBetween,
               crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 12,
-              runSpacing: 12,
+              spacing: 10,
+              runSpacing: 10,
               children: [
                 SegmentedButton<String>(
+                  showSelectedIcon: false,
                   segments: const [
                     ButtonSegment(value: 'expense', label: Text('Egresos')),
                     ButtonSegment(value: 'income', label: Text('Ingresos')),
@@ -114,26 +149,62 @@ class _AnnualBreakdownPageState extends State<AnnualBreakdownPage> {
                     _loadData();
                   },
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      value: _year,
-                      isDense: true,
-                      items: years
-                          .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
-                          .toList(),
-                      onChanged: (y) {
-                        if (y == null) return;
-                        setState(() => _year = y);
-                        _loadData();
-                      },
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: theme.colorScheme.outlineVariant),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int?>(
+                          value: _month,
+                          isDense: true,
+                          items: [
+                            const DropdownMenuItem<int?>(
+                              value: null,
+                              child: Text('Todo el año'),
+                            ),
+                            ...List.generate(
+                              12,
+                              (i) => DropdownMenuItem<int?>(
+                                value: i + 1,
+                                child: Text(_monthNames[i]),
+                              ),
+                            ),
+                          ],
+                          onChanged: (m) {
+                            setState(() => _month = m);
+                            _loadData();
+                          },
+                        ),
+                      ),
                     ),
-                  ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: theme.colorScheme.outlineVariant),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: _year,
+                          isDense: true,
+                          items: years
+                              .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
+                              .toList(),
+                          onChanged: (y) {
+                            if (y == null) return;
+                            setState(() => _year = y);
+                            _loadData();
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -161,7 +232,7 @@ class _AnnualBreakdownPageState extends State<AnnualBreakdownPage> {
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Text(
-                    'No hay ${_selectedType == 'income' ? 'ingresos' : 'egresos'} registrados de enero a diciembre de $_year.',
+                    'No hay ${_selectedType == 'income' ? 'ingresos' : 'egresos'} registrados $emptyPeriodText.',
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -173,7 +244,7 @@ class _AnnualBreakdownPageState extends State<AnnualBreakdownPage> {
                   child: Column(
                     children: [
                       Text(
-                        'Enero - Diciembre $_year',
+                        periodTitle,
                         style: theme.textTheme.labelLarge?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -253,15 +324,20 @@ class _AnnualBreakdownPageState extends State<AnnualBreakdownPage> {
                     ),
                     title: Text(
                       row['category_name'] as String? ?? 'Sin categoría',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     trailing: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text(
-                          _fmtPyg(row['total_amount']),
-                          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            _fmtPyg(row['total_amount']),
+                            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                          ),
                         ),
                         Text(
                           '$pct%',

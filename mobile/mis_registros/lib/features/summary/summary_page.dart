@@ -3,15 +3,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/network/api_client.dart';
 import '../../core/state/ledger_refresh_notifier.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/app_feedback.dart';
 import '../../core/utils/currency_formatter.dart';
 import 'annual_breakdown_page.dart';
 
 class SummaryPage extends StatefulWidget {
-  const SummaryPage({
-    super.key,
-    required this.apiClient,
-    this.refreshNotifier,
-  });
+  const SummaryPage({super.key, required this.apiClient, this.refreshNotifier});
 
   final ApiClient apiClient;
   final LedgerRefreshNotifier? refreshNotifier;
@@ -109,9 +106,13 @@ class _SummaryPageState extends State<SummaryPage> {
 
       if (!mounted) return;
 
-      final emailFallback = Supabase.instance.client.auth.currentUser?.email?.split('@').first ?? 'Usuario';
+      final emailFallback =
+          Supabase.instance.client.auth.currentUser?.email?.split('@').first ??
+          'Usuario';
       final displayName = (profileResult['display_name'] as String?)?.trim();
-      final resolvedName = (displayName != null && displayName.isNotEmpty) ? displayName : emailFallback;
+      final resolvedName = (displayName != null && displayName.isNotEmpty)
+          ? displayName
+          : emailFallback;
 
       final bars = <_MonthCapsulePoint>[];
       Map<String, dynamic>? selectedMonthPyg;
@@ -119,14 +120,23 @@ class _SummaryPageState extends State<SummaryPage> {
       for (var i = 0; i < 12; i++) {
         final list = List<Map<String, dynamic>>.from(monthResults[i] as List);
         final pygRow = list.cast<Map<String, dynamic>?>().firstWhere(
-              (row) => row?['currency_code'] == 'PYG',
-              orElse: () => list.isNotEmpty ? list.first : null,
-            );
+          (row) => row?['currency_code'] == 'PYG',
+          orElse: () => list.isNotEmpty ? list.first : null,
+        );
 
-        final incomeVal = double.tryParse((pygRow?['income_total'] ?? '0').toString()) ?? 0;
-        final expenseVal = double.tryParse((pygRow?['net_expense_total'] ?? '0').toString()) ?? 0;
+        final incomeVal =
+            double.tryParse((pygRow?['income_total'] ?? '0').toString()) ?? 0;
+        final expenseVal =
+            double.tryParse((pygRow?['net_expense_total'] ?? '0').toString()) ??
+            0;
 
-        bars.add(_MonthCapsulePoint(month: i + 1, income: incomeVal, expense: expenseVal));
+        bars.add(
+          _MonthCapsulePoint(
+            month: i + 1,
+            income: incomeVal,
+            expense: expenseVal,
+          ),
+        );
 
         if (i + 1 == _month) {
           selectedMonthPyg = pygRow;
@@ -134,7 +144,9 @@ class _SummaryPageState extends State<SummaryPage> {
       }
 
       final allFlows = List<Map<String, dynamic>>.from(flowsResult as List);
-      final pygFlows = allFlows.where((f) => f['currency_code'] == 'PYG').toList();
+      final pygFlows = allFlows
+          .where((f) => f['currency_code'] == 'PYG')
+          .toList();
 
       setState(() {
         _pygSummary = selectedMonthPyg;
@@ -144,7 +156,7 @@ class _SummaryPageState extends State<SummaryPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = AppFeedback.formatError(e));
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -152,10 +164,20 @@ class _SummaryPageState extends State<SummaryPage> {
     }
   }
 
-  void _selectMonth(int month) {
-    if (_month == month) return;
-    setState(() => _month = month);
-    _loadData();
+  void _selectMonthAndOpenBreakdown(int month) {
+    if (_month != month) {
+      setState(() => _month = month);
+      _loadData();
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AnnualBreakdownPage(
+          apiClient: widget.apiClient,
+          initialYear: _year,
+          initialMonth: month,
+        ),
+      ),
+    );
   }
 
   void _selectYear(int year) {
@@ -213,12 +235,11 @@ class _SummaryPageState extends State<SummaryPage> {
                             theme.colorScheme.primaryContainer,
                             theme.colorScheme.surface,
                           ]
-                        : [
-                            headerTint,
-                            headerTint.withValues(alpha: 0.85),
-                          ],
+                        : [headerTint, headerTint.withValues(alpha: 0.85)],
                   ),
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(28),
+                  ),
                 ),
               ),
               Padding(
@@ -234,7 +255,9 @@ class _SummaryPageState extends State<SummaryPage> {
                             : '${_greetingByHour()}, $_userName',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
-                          color: isDark ? theme.colorScheme.onSurface : Colors.white,
+                          color: isDark
+                              ? theme.colorScheme.onSurface
+                              : Colors.white,
                         ),
                       ),
                     ),
@@ -243,13 +266,18 @@ class _SummaryPageState extends State<SummaryPage> {
                       summary: _pygSummary,
                       monthLabel: '${_monthLabels[_month - 1]} $_year',
                       accentYellow: incomeBarColor,
-                      onAccentYellow: isDark ? const Color(0xFF0B0F19) : Colors.white,
+                      onAccentYellow: isDark
+                          ? const Color(0xFF0B0F19)
+                          : Colors.white,
                       deepTeal: expenseBarColor,
-                      onDeepTeal: isDark ? const Color(0xFF0B0F19) : Colors.white,
+                      onDeepTeal: isDark
+                          ? const Color(0xFF0B0F19)
+                          : Colors.white,
                       colors: colors,
                       formatPyg: _fmtPyg,
                       showDetails: _showDetails,
-                      onToggleDetails: () => setState(() => _showDetails = !_showDetails),
+                      onToggleDetails: () =>
+                          setState(() => _showDetails = !_showDetails),
                       onPrevMonth: () {
                         final prev = DateTime(_year, _month - 1, 1);
                         setState(() {
@@ -289,9 +317,15 @@ class _SummaryPageState extends State<SummaryPage> {
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         children: [
-                          Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+                          Text(
+                            _error!,
+                            style: TextStyle(color: theme.colorScheme.error),
+                          ),
                           const SizedBox(height: 8),
-                          OutlinedButton(onPressed: _loadData, child: const Text('Reintentar')),
+                          OutlinedButton(
+                            onPressed: _loadData,
+                            child: const Text('Reintentar'),
+                          ),
                         ],
                       ),
                     ),
@@ -305,7 +339,7 @@ class _SummaryPageState extends State<SummaryPage> {
                     monthLabels: _monthLabels,
                     accentYellow: incomeBarColor,
                     deepTeal: expenseBarColor,
-                    onSelectMonth: _selectMonth,
+                    onSelectMonth: _selectMonthAndOpenBreakdown,
                     onSelectYear: _selectYear,
                     onOpenBreakdown: () {
                       Navigator.of(context).push(
@@ -326,7 +360,9 @@ class _SummaryPageState extends State<SummaryPage> {
                     children: [
                       Text(
                         'Cuentas (${_monthLabels[_month - 1]})',
-                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       Text(
                         'PYG',
@@ -349,7 +385,10 @@ class _SummaryPageState extends State<SummaryPage> {
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
                           child: Row(
                             children: [
                               Expanded(
@@ -358,9 +397,10 @@ class _SummaryPageState extends State<SummaryPage> {
                                   children: [
                                     Text(
                                       flow['account_name'] as String? ?? '',
-                                      style: theme.textTheme.titleSmall?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
                                     ),
                                     const SizedBox(height: 4),
                                     Wrap(
@@ -369,17 +409,19 @@ class _SummaryPageState extends State<SummaryPage> {
                                       children: [
                                         Text(
                                           '↑ ${_fmtPyg(flow['inflows_total'])}',
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: colors.income,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: colors.income,
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                         ),
                                         Text(
                                           '↓ ${_fmtPyg(flow['outflows_total'])}',
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: colors.expense,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: colors.expense,
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                         ),
                                       ],
                                     ),
@@ -453,14 +495,17 @@ class _BalanceHeroCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
               children: [
                 Text(
                   'Tu balance',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
-                    fontStyle: FontStyle.italic,
+                    fontStyle: FontStyle.normal,
                   ),
                 ),
                 Row(
@@ -469,18 +514,26 @@ class _BalanceHeroCard extends StatelessWidget {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      constraints: const BoxConstraints(
+                        minWidth: 28,
+                        minHeight: 28,
+                      ),
                       icon: const Icon(Icons.chevron_left, size: 18),
                       onPressed: onPrevMonth,
                     ),
                     Text(
                       monthLabel,
-                      style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      constraints: const BoxConstraints(
+                        minWidth: 28,
+                        minHeight: 28,
+                      ),
                       icon: const Icon(Icons.chevron_right, size: 18),
                       onPressed: onNextMonth,
                     ),
@@ -497,7 +550,9 @@ class _BalanceHeroCard extends StatelessWidget {
                 style: theme.textTheme.headlineLarge?.copyWith(
                   fontWeight: FontWeight.w400,
                   letterSpacing: -0.5,
-                  color: isNegativeBalance ? colors.expense : theme.colorScheme.onSurface,
+                  color: isNegativeBalance
+                      ? colors.expense
+                      : theme.colorScheme.onSurface,
                 ),
               ),
             ),
@@ -511,7 +566,10 @@ class _BalanceHeroCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
                         color: accentYellow,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -541,7 +599,10 @@ class _BalanceHeroCard extends StatelessWidget {
                     ),
                     Expanded(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
                         color: deepTeal,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -578,7 +639,10 @@ class _BalanceHeroCard extends StatelessWidget {
               alignment: Alignment.centerRight,
               child: TextButton.icon(
                 onPressed: onToggleDetails,
-                icon: Icon(showDetails ? Icons.expand_less : Icons.expand_more, size: 18),
+                icon: Icon(
+                  showDetails ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                ),
                 label: Text(showDetails ? 'Ocultar detalle' : 'Ver todo'),
               ),
             ),
@@ -646,7 +710,9 @@ class _AnnualCapsulesCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final years = [year - 2, year - 1, year, year + 1];
-    final emptyBarColor = theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7);
+    final emptyBarColor = theme.colorScheme.surfaceContainerHighest.withValues(
+      alpha: 0.7,
+    );
 
     var maxTotal = 0.0;
     for (final b in bars) {
@@ -660,12 +726,18 @@ class _AnnualCapsulesCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 // Selector de año en píldora
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: theme.colorScheme.outlineVariant),
@@ -675,7 +747,10 @@ class _AnnualCapsulesCard extends StatelessWidget {
                       value: year,
                       isDense: true,
                       items: years
-                          .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
+                          .map(
+                            (y) =>
+                                DropdownMenuItem(value: y, child: Text('$y')),
+                          )
                           .toList(),
                       onChanged: (y) {
                         if (y != null) onSelectYear(y);
@@ -690,7 +765,7 @@ class _AnnualCapsulesCard extends StatelessWidget {
                     _DotLabel(color: accentYellow, label: 'Ingreso'),
                     const SizedBox(width: 8),
                     _DotLabel(color: deepTeal, label: 'Egreso'),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     IconButton.filledTonal(
                       tooltip: 'Ver desglose anual por categoría',
                       visualDensity: VisualDensity.compact,
@@ -711,7 +786,9 @@ class _AnnualCapsulesCard extends StatelessWidget {
                 children: bars.map((b) {
                   final isSelected = b.month == selectedMonth;
                   final hasData = b.total > 0 && maxTotal > 0;
-                  final heightFactor = hasData ? (b.total / maxTotal).clamp(0.18, 1.0) : 1.0;
+                  final heightFactor = hasData
+                      ? (b.total / maxTotal).clamp(0.18, 1.0)
+                      : 1.0;
 
                   final incomeShare = hasData ? (b.income / b.total) : 0.5;
                   final incomeFlex = (incomeShare * 1000).round();
@@ -736,7 +813,10 @@ class _AnnualCapsulesCard extends StatelessWidget {
                                     color: emptyBarColor,
                                     borderRadius: BorderRadius.circular(10),
                                     border: isSelected
-                                        ? Border.all(color: theme.colorScheme.primary, width: 1.5)
+                                        ? Border.all(
+                                            color: theme.colorScheme.primary,
+                                            width: 1.5,
+                                          )
                                         : null,
                                   ),
                                   clipBehavior: Clip.antiAlias,
@@ -746,12 +826,16 @@ class _AnnualCapsulesCard extends StatelessWidget {
                                             if (expenseFlex > 0)
                                               Expanded(
                                                 flex: expenseFlex,
-                                                child: Container(color: deepTeal),
+                                                child: Container(
+                                                  color: deepTeal,
+                                                ),
                                               ),
                                             if (incomeFlex > 0)
                                               Expanded(
                                                 flex: incomeFlex,
-                                                child: Container(color: accentYellow),
+                                                child: Container(
+                                                  color: accentYellow,
+                                                ),
                                               ),
                                           ],
                                         )
@@ -767,7 +851,9 @@ class _AnnualCapsulesCard extends StatelessWidget {
                               monthLabels[b.month - 1],
                               style: theme.textTheme.labelSmall?.copyWith(
                                 fontSize: 10,
-                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                                fontWeight: isSelected
+                                    ? FontWeight.w800
+                                    : FontWeight.w500,
                                 color: isSelected
                                     ? theme.colorScheme.primary
                                     : theme.colorScheme.onSurfaceVariant,
@@ -833,12 +919,17 @@ class _DetailItem extends StatelessWidget {
         children: [
           Text(
             label,
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 2),
           Text(
             value,
-            style: theme.textTheme.titleSmall?.copyWith(color: color, fontWeight: FontWeight.w700),
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
