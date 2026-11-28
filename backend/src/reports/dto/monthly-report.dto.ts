@@ -30,3 +30,11 @@ export class AnnualCategoryBreakdownQueryDto {
   currency_code?: string;
 }
 
+export class MonthlyCategoryBreakdownQueryDto extends AnnualCategoryBreakdownQueryDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  month!: number;
+}
+

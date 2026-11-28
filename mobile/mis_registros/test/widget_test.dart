@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mis_registros/core/theme/app_theme.dart';
 import 'package:mis_registros/core/theme/theme_controller.dart';
+import 'package:mis_registros/core/utils/account_icon_resolver.dart';
+import 'package:mis_registros/core/utils/app_feedback.dart';
+import 'package:mis_registros/core/utils/category_icon_resolver.dart';
 import 'package:mis_registros/core/utils/currency_formatter.dart';
 import 'package:mis_registros/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +21,42 @@ void main() {
     );
     expect(CurrencyFormatter.toApiDecimal('1.500.000'), '1500000');
     expect(CurrencyFormatter.toApiDecimal('1.500,50'), '1500.50');
+    expect(
+      AppFeedback.formatError('ClientException: Failed to fetch'),
+      contains('No se pudo conectar'),
+    );
+    expect(
+      AppFeedback.formatError('Invalid login credentials'),
+      'Correo o contraseña incorrectos.',
+    );
+    expect(
+      CategoryIconResolver.resolve('Supermercado', type: 'expense'),
+      Icons.shopping_cart_rounded,
+    );
+    expect(
+      CategoryIconResolver.resolve('Salario mensual', type: 'income'),
+      Icons.payments_rounded,
+    );
+    expect(
+      CategoryIconResolver.resolve('Varios', type: 'expense'),
+      Icons.sell_rounded,
+    );
+    expect(
+      CategoryIconResolver.resolve('Otros', type: 'income'),
+      Icons.monetization_on_rounded,
+    );
+    expect(
+      AccountIconResolver.resolve('Fondo de ahorro', type: 'bank'),
+      Icons.savings_rounded,
+    );
+    expect(
+      AccountIconResolver.resolve('Visa Itaú', type: 'credit_card'),
+      Icons.credit_card_rounded,
+    );
+    expect(
+      AccountIconResolver.resolve('Principal', type: 'e_wallet'),
+      Icons.contactless_rounded,
+    );
   });
 
   testWidgets('ThemeController cambia y persiste modo claro/oscuro y paleta de color', (tester) async {

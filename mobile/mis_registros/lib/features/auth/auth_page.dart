@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/theme_controller.dart';
+import '../../core/utils/app_feedback.dart';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({
@@ -80,12 +81,16 @@ class _AuthPageState extends State<AuthPage> {
             _infoMessage = 'Tu correo aún no está confirmado. Ingresa o reenvía el código de 6 dígitos.';
           });
         } else {
-          setState(() => _errorMessage = e.message);
+          final msg = AppFeedback.formatError(e.message);
+          setState(() => _errorMessage = msg);
+          AppFeedback.showError(context, msg);
         }
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        setState(() => _errorMessage = 'No se pudo completar la autenticación.');
+        final msg = AppFeedback.formatError(e);
+        setState(() => _errorMessage = msg);
+        AppFeedback.showError(context, msg);
       }
     } finally {
       if (mounted) {
@@ -228,6 +233,7 @@ class _AuthPageState extends State<AuthPage> {
             controller: _displayNameController,
             decoration: const InputDecoration(
               labelText: 'Nombre visible (opcional)',
+              hintText: 'Ej.: María González',
               prefixIcon: Icon(Icons.person_outline),
             ),
           ),
@@ -239,6 +245,7 @@ class _AuthPageState extends State<AuthPage> {
           autofillHints: const [AutofillHints.email],
           decoration: const InputDecoration(
             labelText: 'Correo electrónico',
+            hintText: 'Ej.: nombre@correo.com',
             prefixIcon: Icon(Icons.email_outlined),
           ),
           validator: (value) {
@@ -254,9 +261,10 @@ class _AuthPageState extends State<AuthPage> {
           controller: _passwordController,
           obscureText: true,
           autofillHints: const [AutofillHints.password],
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Contraseña',
-            prefixIcon: Icon(Icons.lock_outline),
+            hintText: _isSignUp ? 'Mínimo 6 caracteres' : 'Tu contraseña',
+            prefixIcon: const Icon(Icons.lock_outline),
           ),
           validator: (value) {
             if ((value ?? '').length < 6) {
@@ -327,6 +335,7 @@ class _AuthPageState extends State<AuthPage> {
           maxLength: 6,
           decoration: const InputDecoration(
             labelText: 'Código de 6 dígitos',
+            hintText: 'Ej.: 123456',
             prefixIcon: Icon(Icons.pin_outlined),
             counterText: '',
           ),
